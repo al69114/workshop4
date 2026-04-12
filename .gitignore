@@ -1,2 +1,10 @@
 venv/
 env/
+
+# Secrets — never commit these
+.env
+credentials.json
+token.json
+
+# Generated data
+appointments.csv
