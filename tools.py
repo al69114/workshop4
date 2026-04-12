@@ -14,7 +14,7 @@ Each function returns a plain dict — the agent reads it and speaks the result.
 import json
 import random
 import string
-import csv_service
+from services import csv_service
 
 # ── Mock data ──────────────────────────────────────────────────────────────────
 

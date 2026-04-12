@@ -1,28 +1,28 @@
-# KTP Voice Agent Workshop
+# AirPro HVAC Voice Agent
 
-A real-time voice agent powered by the **Gemini Live API** that answers questions about [Kappa Theta Pi (KTP)](https://ktpgeorgia.com) — UGA's professional technology fraternity.
+A real-time AI phone agent powered by the **Gemini Live API** that handles inbound customer calls for an HVAC company — booking, cancellations, rescheduling, order status checks, account verification, and basic troubleshooting.
 
-Speak naturally and the agent responds with voice — no buttons, no typing.
+Customers speak naturally, the agent responds with voice, and every appointment change is written to a CSV file the HVAC team can open at any time.
 
 ---
 
 ## How it works
 
 ```
-Your Microphone → Gemini Live API → Speaker
-     (16 kHz PCM)   gemini-2.5-flash-native-audio   (24 kHz PCM)
+Customer speaks → Gemini Live API → Calls a tool (book/cancel/reschedule) → Speaks result back
+                  (native audio)         ↓
+                                  appointments.csv updated in real time
 ```
 
-The Gemini Live API handles everything natively:
-- **Speech understanding** — listens to your voice in real time
-- **AI reasoning** — answers questions about KTP
-- **Text-to-speech** — responds with a natural voice (no separate TTS needed)
+- **No separate STT or TTS** — Gemini handles voice in and voice out natively
+- **Function calling** — agent can look up and update real data mid-conversation
+- **CSV tracking** — every appointment action is logged automatically
 
 ---
 
 ## Setup
 
-### 1. Install system dependency (PortAudio)
+### 1. Install PortAudio (required by PyAudio)
 
 **macOS**
 ```bash
@@ -34,42 +34,64 @@ brew install portaudio
 sudo apt-get install portaudio19-dev
 ```
 
-### 2. Install Python dependencies
+### 2. Create and activate a virtual environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Add your Gemini API key
+### 4. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and paste your key (get one free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)):
+Edit `.env`:
 
 ```
-GEMINI_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_api_key_here      # https://aistudio.google.com/apikey
+APPOINTMENTS_CSV=appointments.csv     # path to the CSV file (auto-created)
 ```
 
-### 4. Run the agent
+### 5. Run the agent
 
 ```bash
 python main.py
 ```
 
+Pick a voice when prompted, then the agent greets the caller automatically.
+
 ---
 
-## Try asking...
+## What the agent can do
 
-- *"What is KTP?"*
-- *"When is rush?"*
-- *"What are the three pillars of KTP?"*
-- *"What companies do KTP alumni work at?"*
-- *"What happens at Shark Tank night?"*
-- *"How do I join KTP?"*
+| Option | What happens |
+|---|---|
+| **Book appointment / Emergency** | Verifies account → shows available slots → books → writes to CSV |
+| **Cancel appointment** | Verifies account → shows appointments → cancels → updates CSV |
+| **Reschedule appointment** | Verifies account → shows slots → moves appointment → updates CSV |
+| **Order status** | Looks up a service or parts order by ID |
+| **Troubleshooting** | Walks the customer through common HVAC fixes over the phone |
 
-Press **Ctrl+C** to quit.
+---
+
+## Test data
+
+Use these with the mock data in `tools.py`:
+
+| What | Value |
+|---|---|
+| Account number | `ACC-1001` |
+| Last name | `Garcia` |
+| Appointment ID | `APT-4001` |
+| Order ID | `ORD-8001` |
 
 ---
 
@@ -77,17 +99,41 @@ Press **Ctrl+C** to quit.
 
 ```
 workshop4/
-├── main.py          # Voice agent — start here
+├── main.py              # Entry point — voice agent loop
+├── tools.py             # HVAC business logic + tool dispatcher
+├── voices.py            # Voice options and speaking personalities
+├── services/
+│   └── csv_service.py   # Reads and writes appointments.csv
 ├── requirements.txt
-├── .env.example     # Copy to .env and add your API key
-└── README.md
+├── .env.example
+└── .gitignore
 ```
 
-## Model used
+**To connect a real backend:** replace the mock data and functions in `tools.py` with calls to your actual CRM, scheduling system, or database. The agent logic in `main.py` does not need to change.
+
+---
+
+## Available voices
+
+| # | Voice | Character |
+|---|---|---|
+| 1 | Aoede | Warm, conversational (default) |
+| 2 | Puck | Upbeat, energetic |
+| 3 | Charon | Deep, authoritative |
+| 4 | Kore | Clear, neutral |
+| 5 | Fenrir | Expressive |
+| 6 | Leda | Friendly |
+| 7 | Orus | Confident |
+| 8 | Zephyr | Calm |
+
+---
+
+## Model
 
 | Property | Value |
 |---|---|
 | Model | `gemini-2.5-flash-native-audio-preview-12-2025` |
-| Input | Live audio (microphone) |
-| Output | Native audio (speaker) |
-| Voice | Aoede |
+| Input | Live microphone audio (16 kHz PCM) |
+| Output | Native audio (24 kHz PCM) |
+| Function calling | Supported |
+| Thinking | Disabled (not needed for real-time voice) |
