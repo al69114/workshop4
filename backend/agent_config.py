@@ -1,43 +1,14 @@
 """
-HVAC Voice Agent Workshop
-=========================
-A real-time voice agent powered by Gemini Live API that handles inbound
-customer calls for an HVAC company — rescheduling, order status, account
-verification, and basic troubleshooting.
-
-Prerequisites:
-  - Python 3.10+
-  - A Gemini API key in .env (see .env.example)
-  - PortAudio installed (required by PyAudio):
-      macOS:  brew install portaudio
-      Ubuntu: sudo apt-get install portaudio19-dev
+Shared Gemini Live configuration for the HVAC agents.
 """
 
-import json
-import asyncio
-import os
-import sys
-
-import pyaudio
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
-from voices import VOICES
-import tools
 
-load_dotenv()
-
-# ── Model ──────────────────────────────────────────────────────────────────────
 MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+INPUT_AUDIO_SAMPLE_RATE = 16_000
+OUTPUT_AUDIO_SAMPLE_RATE = 24_000
+OPENING_PROMPT = "[Call connected. Deliver the opening greeting and menu now.]"
 
-# ── Audio configuration ────────────────────────────────────────────────────────
-MIC_SAMPLE_RATE = 16_000      # Hz — what Gemini Live expects as input
-SPEAKER_SAMPLE_RATE = 24_000  # Hz — what Gemini Live sends back
-CHANNELS = 1
-CHUNK = 1024
-FORMAT = pyaudio.paInt16
-
-# ── System Prompt ──────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """
 You are a professional and friendly customer service agent for AirPro HVAC Services.
 Your job is to handle inbound customer calls efficiently and helpfully.
@@ -96,7 +67,6 @@ Which option would you like?"
 - After completing a request, ask if there is anything else you can help with
 """
 
-# ── Function declarations (tools the agent can call) ──────────────────────────
 TOOLS = [
     types.Tool(
         function_declarations=[
@@ -252,176 +222,32 @@ TOOLS = [
     )
 ]
 
-
-# ── Voice picker ───────────────────────────────────────────────────────────────
-
-def pick_voice() -> dict:
-    """Prompt the user to pick a voice and return the full voice dict."""
-    print("\nAvailable voices:")
-    for key, voice in VOICES.items():
-        print(f"  {key}. {voice['name']} — {voice['description']}")
-    while True:
-        choice = input("\nPick a voice [1-8] (press Enter for default): ").strip()
-        if choice == "":
-            return VOICES["1"]
-        if choice in VOICES:
-            return VOICES[choice]
-        print("  Invalid choice, please enter a number between 1 and 8.")
+APPOINTMENT_TOOLS = {
+    "book_appointment",
+    "cancel_appointment",
+    "reschedule_appointment",
+}
 
 
-# ── Voice agent ────────────────────────────────────────────────────────────────
-
-async def run_agent() -> None:
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        sys.exit(
-            "Error: GEMINI_API_KEY is not set.\n"
-            "Copy .env.example to .env and add your key."
-        )
-
-    voice = pick_voice()
-
-    system_prompt_with_style = (
-        SYSTEM_PROMPT
-        + f"\n\n## Speaking Style\n{voice['style']}"
-    )
-
-    client = genai.Client(api_key=api_key)
-
-    config = types.LiveConnectConfig(
+def build_live_config(voice_name: str, voice_style: str) -> types.LiveConnectConfig:
+    """Create a consistent Gemini Live config for both terminal and browser sessions."""
+    return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name=voice["name"]
+                    voice_name=voice_name
                 )
             )
         ),
         system_instruction=types.Content(
-            parts=[types.Part(text=system_prompt_with_style)]
+            parts=[
+                types.Part(
+                    text=f"{SYSTEM_PROMPT}\n\n## Speaking Style\n{voice_style}"
+                )
+            ]
         ),
         tools=TOOLS,
         thinking_config=types.ThinkingConfig(thinking_budget=0),
+        input_audio_transcription=types.AudioTranscriptionConfig(),
     )
-
-    pa = pyaudio.PyAudio()
-    mic_stream = pa.open(
-        format=FORMAT,
-        channels=CHANNELS,
-        rate=MIC_SAMPLE_RATE,
-        input=True,
-        frames_per_buffer=CHUNK,
-    )
-    speaker_stream = pa.open(
-        format=FORMAT,
-        channels=CHANNELS,
-        rate=SPEAKER_SAMPLE_RATE,
-        output=True,
-    )
-
-    print("=" * 52)
-    print(f"  AirPro HVAC Agent ({voice['name']}) — ready for calls!")
-    print("  Press Ctrl+C to end the call.")
-    print("=" * 52)
-
-    loop = asyncio.get_event_loop()
-
-    # Mute mic while agent speaks to prevent acoustic echo
-    agent_speaking = False
-
-    try:
-        async with client.aio.live.connect(model=MODEL, config=config) as session:
-
-            # Trigger the opening greeting immediately when the call connects
-            await session.send(
-                input="[Call connected. Deliver the opening greeting and menu now.]",
-                end_of_turn=True,
-            )
-
-            async def stream_microphone() -> None:
-                nonlocal agent_speaking
-                try:
-                    while True:
-                        pcm = await loop.run_in_executor(
-                            None,
-                            lambda: mic_stream.read(CHUNK, exception_on_overflow=False),
-                        )
-                        if not agent_speaking:
-                            await session.send_realtime_input(
-                                audio=types.Blob(
-                                    data=pcm,
-                                    mime_type=f"audio/pcm;rate={MIC_SAMPLE_RATE}",
-                                )
-                            )
-                except Exception as e:
-                    print(f"[mic error] {e}")
-                    raise
-
-            async def play_responses() -> None:
-                nonlocal agent_speaking
-                try:
-                    while True:
-                        async for message in session.receive():
-                            # ── Audio / text response ──────────────────────
-                            server_content = message.server_content
-                            if server_content:
-                                if server_content.model_turn:
-                                    agent_speaking = True
-                                    for part in server_content.model_turn.parts:
-                                        if getattr(part, "thought", False):
-                                            continue
-                                        if part.text:
-                                            print(f"Agent: {part.text}")
-                                        if part.inline_data and part.inline_data.data:
-                                            await loop.run_in_executor(
-                                                None,
-                                                speaker_stream.write,
-                                                part.inline_data.data,
-                                            )
-                                if server_content.turn_complete:
-                                    agent_speaking = False
-                                    print("[listening...]")
-
-                            # ── Tool call ──────────────────────────────────
-                            if message.tool_call:
-                                responses = []
-                                for func_call in message.tool_call.function_calls:
-                                    print(f"[tool] {func_call.name}({json.dumps(dict(func_call.args))})")
-                                    result = tools.dispatch(func_call.name, dict(func_call.args))
-                                    print(f"[tool result] {json.dumps(result)}")
-                                    responses.append(
-                                        types.FunctionResponse(
-                                            name=func_call.name,
-                                            id=func_call.id,
-                                            response={"output": json.dumps(result)},
-                                        )
-                                    )
-                                await session.send(
-                                    input=types.LiveClientToolResponse(
-                                        function_responses=responses
-                                    )
-                                )
-
-                except Exception as e:
-                    print(f"[response error] {e}")
-                    raise
-
-            results = await asyncio.gather(
-                stream_microphone(), play_responses(), return_exceptions=True
-            )
-            for r in results:
-                if isinstance(r, Exception):
-                    print(f"[task error] {r}")
-
-    except KeyboardInterrupt:
-        print("\nCall ended. Goodbye!")
-    finally:
-        mic_stream.stop_stream()
-        mic_stream.close()
-        speaker_stream.stop_stream()
-        speaker_stream.close()
-        pa.terminate()
-
-
-if __name__ == "__main__":
-    asyncio.run(run_agent())

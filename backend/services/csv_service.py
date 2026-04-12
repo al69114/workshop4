@@ -12,31 +12,36 @@ import csv
 import os
 from pathlib import Path
 
-CSV_PATH = Path(os.environ.get("APPOINTMENTS_CSV", "appointments.csv"))
-
 HEADERS = [
     "Appointment ID", "Account", "Customer",
     "Service", "Date", "Time", "Technician", "Status",
 ]
 
 
+def _csv_path() -> Path:
+    """Resolve the appointment CSV from the current environment."""
+    return Path(os.environ.get("APPOINTMENTS_CSV", "appointments.csv"))
+
+
 def _ensure_file() -> None:
     """Create the CSV file with headers if it doesn't exist yet."""
-    if not CSV_PATH.exists():
-        with open(CSV_PATH, "w", newline="") as f:
+    csv_path = _csv_path()
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    if not csv_path.exists():
+        with open(csv_path, "w", newline="") as f:
             csv.DictWriter(f, fieldnames=HEADERS).writeheader()
 
 
 def _read_all() -> list[dict]:
     """Return all rows as a list of dicts."""
     _ensure_file()
-    with open(CSV_PATH, newline="") as f:
+    with open(_csv_path(), newline="") as f:
         return list(csv.DictReader(f))
 
 
 def _write_all(rows: list[dict]) -> None:
     """Overwrite the CSV file with the given rows."""
-    with open(CSV_PATH, "w", newline="") as f:
+    with open(_csv_path(), "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=HEADERS)
         writer.writeheader()
         writer.writerows(rows)
@@ -56,7 +61,8 @@ def add_appointment(
     """Append a new appointment row to the CSV."""
     try:
         _ensure_file()
-        with open(CSV_PATH, "a", newline="") as f:
+        csv_path = _csv_path()
+        with open(csv_path, "a", newline="") as f:
             csv.DictWriter(f, fieldnames=HEADERS).writerow({
                 "Appointment ID": appointment_id,
                 "Account":        account,
@@ -67,7 +73,7 @@ def add_appointment(
                 "Technician":     tech,
                 "Status":         "Scheduled",
             })
-        return {"success": True, "file": str(CSV_PATH)}
+        return {"success": True, "file": str(csv_path)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -85,7 +91,7 @@ def cancel_appointment_row(appointment_id: str) -> dict:
         if not found:
             return {"error": f"Appointment {appointment_id} not found in CSV."}
         _write_all(rows)
-        return {"success": True, "file": str(CSV_PATH)}
+        return {"success": True, "file": str(_csv_path())}
     except Exception as e:
         return {"error": str(e)}
 
@@ -107,6 +113,6 @@ def reschedule_appointment_row(
         if not found:
             return {"error": f"Appointment {appointment_id} not found in CSV."}
         _write_all(rows)
-        return {"success": True, "file": str(CSV_PATH)}
+        return {"success": True, "file": str(_csv_path())}
     except Exception as e:
         return {"error": str(e)}

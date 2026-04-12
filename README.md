@@ -41,15 +41,17 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 3. Install Python dependencies
+### 3. Install backend dependencies
 
 ```bash
+cd backend
 pip install -r requirements.txt
 ```
 
 ### 4. Configure environment variables
 
 ```bash
+cd backend
 cp .env.example .env
 ```
 
@@ -60,13 +62,28 @@ GEMINI_API_KEY=your_api_key_here      # https://aistudio.google.com/apikey
 APPOINTMENTS_CSV=appointments.csv     # path to the CSV file (auto-created)
 ```
 
-### 5. Run the agent
+### 5. Run the backend API
 
 ```bash
+cd backend
 python main.py
 ```
 
-Pick a voice when prompted, then the agent greets the caller automatically.
+### 6. Run the frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open `http://localhost:3000`, then start the browser-based agent from the UI.
+
+### 7. Optional: run the terminal microphone agent
+
+```bash
+cd backend
+python terminal_agent.py
+```
 
 ---
 
@@ -84,7 +101,7 @@ Pick a voice when prompted, then the agent greets the caller automatically.
 
 ## Test data
 
-Use these with the mock data in `tools.py`:
+Use these with the mock data in `backend/tools.py`:
 
 | What | Value |
 |---|---|
@@ -99,17 +116,21 @@ Use these with the mock data in `tools.py`:
 
 ```
 workshop4/
-├── main.py              # Entry point — voice agent loop
-├── tools.py             # HVAC business logic + tool dispatcher
-├── voices.py            # Voice options and speaking personalities
-├── services/
-│   └── csv_service.py   # Reads and writes appointments.csv
-├── requirements.txt
-├── .env.example
+├── backend/
+│   ├── main.py              # FastAPI backend server
+│   ├── terminal_agent.py    # Optional local microphone agent
+│   ├── api.py               # FastAPI + browser voice websocket
+│   ├── tools.py             # HVAC business logic + tool dispatcher
+│   ├── voices.py            # Voice options and speaking personalities
+│   ├── services/
+│   │   └── csv_service.py   # Reads and writes appointments.csv
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
 └── .gitignore
 ```
 
-**To connect a real backend:** replace the mock data and functions in `tools.py` with calls to your actual CRM, scheduling system, or database. The agent logic in `main.py` does not need to change.
+**To connect a real backend:** replace the mock data and functions in `backend/tools.py` with calls to your actual CRM, scheduling system, or database. The agent logic in `backend/main.py` and `backend/api.py` does not need to change.
 
 ---
 
