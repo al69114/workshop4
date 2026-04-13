@@ -14,6 +14,7 @@ Each function returns a plain dict — the agent reads it and speaks the result.
 import json
 import random
 import string
+from datetime import datetime
 from services import csv_service
 
 # ── Mock data ──────────────────────────────────────────────────────────────────
@@ -49,6 +50,39 @@ AVAILABLE_SLOTS = [
 ]
 
 TECHNICIANS = ["Carlos", "Maria", "Jake", "Sophie"]
+
+
+def _format_spoken_date(value: str) -> str:
+    """Convert YYYY-MM-DD into a short spoken date."""
+    parsed = datetime.strptime(value, "%Y-%m-%d")
+    return parsed.strftime("%A, %B").replace(" 0", " ") + _ordinal_suffix(parsed.day)
+
+
+def _ordinal_suffix(day: int) -> str:
+    """Return ordinal suffix for spoken dates."""
+    if 10 <= day % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f" {day}{suffix}"
+
+
+def _join_names(names: list[str]) -> str:
+    """Join technician names in a natural spoken way."""
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} or {names[1]}"
+    return f"{', '.join(names[:-1])}, or {names[-1]}"
+
+
+def _spoken_slot_line(slot: dict) -> str:
+    """Create one clean spoken availability line."""
+    spoken_date = _format_spoken_date(slot["date"])
+    technicians = _join_names(slot["available_technicians"])
+    return f"{spoken_date} at {slot['time']} with {technicians}"
 
 
 def _date_in_range(value: str, start_date: str, end_date: str) -> bool:
@@ -257,16 +291,13 @@ def get_available_slots(
             "repeat_prompt": "If you want, I can check a different date range for you.",
         }
 
-    spoken_lines = [
-        f"{slot['date']} at {slot['time']}: {', '.join(slot['available_technicians'])} available"
-        for slot in slot_options
-    ]
+    spoken_lines = [_spoken_slot_line(slot) for slot in slot_options[:3]]
     return {
         "available_slots": slot_options,
         "unavailable_slots": unavailable_slots,
         "service_type": service_type,
-        "message": "Here are the available appointment openings with the technicians who can take them.",
-        "spoken_summary": " ; ".join(spoken_lines),
+        "message": "Here are the next available appointment openings.",
+        "spoken_summary": ". ".join(spoken_lines) + ".",
         "repeat_prompt": "If you would like, I can repeat those openings more slowly.",
         "note": "Technician will call 30 minutes before arrival to confirm.",
     }
