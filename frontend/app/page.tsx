@@ -22,6 +22,16 @@ type CallState = "idle" | "connecting" | "live";
 const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
 const OUTPUT_GAIN = 0.72;
+const VOICE_OPTIONS = [
+  { value: "1", label: "Aoede", detail: "Warm, conversational" },
+  { value: "2", label: "Puck", detail: "Upbeat, energetic" },
+  { value: "3", label: "Charon", detail: "Deep, authoritative" },
+  { value: "4", label: "Kore", detail: "Clear, neutral" },
+  { value: "5", label: "Fenrir", detail: "Expressive" },
+  { value: "6", label: "Leda", detail: "Friendly" },
+  { value: "7", label: "Orus", detail: "Confident" },
+  { value: "8", label: "Zephyr", detail: "Calm" },
+] as const;
 const MICROPHONE_CONSTRAINTS: MediaTrackConstraints = {
   channelCount: 1,
   echoCancellation: true,
@@ -282,6 +292,8 @@ export default function DashboardPage() {
   const [dashboardConnected, setDashboardConnected] = useState(false);
   const [callError, setCallError] = useState<string | null>(null);
   const [highlightAppointments, setHighlightAppointments] = useState(false);
+  const [selectedVoice, setSelectedVoice] =
+    useState<(typeof VOICE_OPTIONS)[number]["value"]>("1");
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -598,7 +610,9 @@ export default function DashboardPage() {
       processor.connect(sink);
       sink.connect(inputContext.destination);
 
-      const voiceSocket = new WebSocket(wsUrl("/voice"));
+      const voiceSocket = new WebSocket(
+        `${wsUrl("/voice")}?voice=${encodeURIComponent(selectedVoice)}`,
+      );
       voiceSocket.binaryType = "arraybuffer";
 
       voiceSocket.onopen = () => {
@@ -694,6 +708,27 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-col items-start gap-3">
+              <label className="flex w-full min-w-[260px] flex-col gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  Agent Voice
+                </span>
+                <select
+                  value={selectedVoice}
+                  onChange={(event) =>
+                    setSelectedVoice(
+                      event.target.value as (typeof VOICE_OPTIONS)[number]["value"],
+                    )
+                  }
+                  disabled={callState !== "idle"}
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-stone-100 outline-none transition focus:border-amber-300/40 focus:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {VOICE_OPTIONS.map((voice) => (
+                    <option key={voice.value} value={voice.value}>
+                      {voice.label} — {voice.detail}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={callState === "live" ? () => void stopCall() : () => void startCall()}
