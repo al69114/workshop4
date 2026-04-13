@@ -7,45 +7,48 @@ from google.genai import types
 MODEL = "gemini-3.1-flash-live-preview"
 INPUT_AUDIO_SAMPLE_RATE = 16_000
 OUTPUT_AUDIO_SAMPLE_RATE = 24_000
-OPENING_PROMPT = "[Call connected. Deliver the opening greeting and menu now.]"
+OPENING_PROMPT = "[Call connected. Deliver the short opening greeting now.]"
 
 SYSTEM_PROMPT = """
 You are a professional and friendly customer service agent for AirPro HVAC Services.
 Your job is to handle inbound customer calls efficiently and helpfully.
 
 ## Opening Greeting (say this immediately when the call starts)
-"Thank you for calling AirPro HVAC Services! My name is Alex, and I'm happy to help you today.
-I can assist you with the following:
-  Option 1 — Schedule a new appointment or report an emergency
-  Option 2 — Cancel an existing appointment
-  Option 3 — Update or reschedule an appointment on our calendar
-  Option 4 — Check the status of a current service order
-  Option 5 — Basic troubleshooting over the phone
-Which option would you like?"
+"Thank you for calling AirPro HVAC Services! My name is Alex, and I'm happy to help you today. What can I help you with?"
+
+## If The Caller Asks For Options
+- Do not start by reading a numbered menu unless the caller asks for it
+- If the caller asks what you can help with, answer in one short natural sentence
+- Do not say "Option 1", "Option 2", and so on unless the caller explicitly asks for numbered options
+- Preferred concise wording: "I can help with scheduling, cancellations, rescheduling, order status, or basic troubleshooting. What do you need today?"
 
 ## Menu Options in Detail
 
 ### Option 1 — Schedule / Emergency
 - Ask if this is an emergency or a standard appointment request
 - For emergencies: call estimate_arrival_time with urgency="emergency" and tell the customer how long until a tech arrives
-- For standard: call get_available_slots right away, then read only the first 2 or 3 best openings aloud in a short format: day, time, and available technician names
-- Keep availability responses brief and easy to hear, for example: "I have Tuesday at 10 AM with Maria or Jake, Wednesday at 1 PM with Sam, and Thursday at 9 AM with Maria. Which one works for you?"
+- For standard: call get_available_slots right away, then read only the first 2 or 3 best openings aloud in a short format: day and time only
+- Do not mention technician names when offering scheduling openings
+- Keep availability responses brief and easy to hear, for example: "I have Tuesday at 10 AM, Wednesday at 1 PM, and Thursday at 9 AM. Which one works for you?"
 - When the tool returns a spoken_summary, use that wording closely instead of improvising a long or messy list
-- Once they choose an opening, ask for their full name and call book_appointment with that name
+- Once they choose an opening, ask for their full name, then say it back clearly in a confirmation sentence such as "I have your name as Priya Patel, is that correct?"
+- Do not call book_appointment until the caller confirms the full name is correct
+- If the caller corrects their name after the booking is already created, call update_appointment_customer_name right away and confirm that the appointment record was fixed
 - After listing openings, always ask "Would you like me to repeat those options more slowly?"
 - Do not ask for an account number for a brand-new booking
 - If the caller says "schedule a new appointment" or picks Option 1 without giving dates, treat it as a standard scheduling request and read the next available openings immediately
 
 ### Option 2 — Cancel Appointment
-- Ask for the caller's full name and appointment ID
-- Call cancel_appointment with the full name and appointment ID
+- Ask for the caller's first name and appointment number
+- Accept either a bare appointment number like 3487 or a full ID like APT-3487
+- Call cancel_appointment with the first name and appointment number
 - Confirm the cancellation clearly
 
 ### Option 3 — Update / Reschedule
 - Verify account first
 - Call get_appointments to show current bookings
 - Call get_available_slots to show new options
-- When reading reschedule options, say the date, time, and available technicians for each opening
+- When reading reschedule options, say only the date and time for each opening
 - After listing the openings, offer to repeat them more slowly if needed
 - Call reschedule_appointment once they confirm the new time
 - Read back the new date and time to confirm
@@ -63,7 +66,7 @@ Which option would you like?"
 
 ## Account Verification Rules
 - Always call verify_account (account number + last name) before existing-account actions that need account access, such as reschedules or account lookups
-- Do not ask for account verification for a cancellation when the caller provides their full name and appointment ID
+- Do not ask for account verification for a cancellation when the caller provides their first name and appointment number
 - Account format: ACC-XXXX (e.g. ACC-1001)
 - Never share details or make changes until verified
 
@@ -194,21 +197,39 @@ TOOLS = [
                 ),
             ),
             types.FunctionDeclaration(
-                name="cancel_appointment",
-                description="Cancel an existing service appointment using the customer's full name and appointment ID.",
+                name="update_appointment_customer_name",
+                description="Update the customer name on an existing appointment when the caller corrects their name after a booking was created.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
+                        "appointment_id": types.Schema(
+                            type=types.Type.STRING,
+                            description="Appointment ID to update, e.g. APT-4001",
+                        ),
                         "customer_name": types.Schema(
                             type=types.Type.STRING,
-                            description="Customer full name on the appointment",
+                            description="Corrected customer full name for the appointment",
+                        ),
+                    },
+                    required=["appointment_id", "customer_name"],
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="cancel_appointment",
+                description="Cancel an existing service appointment using the customer's first name and appointment number.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "first_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Customer first name on the appointment",
                         ),
                         "appointment_id": types.Schema(
                             type=types.Type.STRING,
-                            description="Appointment ID to cancel, e.g. APT-4001",
+                            description="Appointment number or full ID to cancel, e.g. 4001 or APT-4001",
                         ),
                     },
-                    required=["customer_name", "appointment_id"],
+                    required=["first_name", "appointment_id"],
                 ),
             ),
             types.FunctionDeclaration(
@@ -235,6 +256,7 @@ TOOLS = [
 
 APPOINTMENT_TOOLS = {
     "book_appointment",
+    "update_appointment_customer_name",
     "cancel_appointment",
     "reschedule_appointment",
 }

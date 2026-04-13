@@ -256,3 +256,21 @@ def reschedule_appointment_row(
         return {"success": True, "file": str(_csv_path())}
     except Exception as e:
         return {"error": str(e)}
+
+
+def update_appointment_customer_row(appointment_id: str, customer_name: str) -> dict:
+    """Find the appointment by ID and update the customer name."""
+    try:
+        rows = _read_all()
+        found = False
+        for row in rows:
+            if row["Appointment ID"] == appointment_id:
+                row["Customer"] = customer_name
+                found = True
+                break
+        if not found:
+            return {"error": f"Appointment {appointment_id} not found in CSV."}
+        _write_all(rows)
+        return {"success": True, "file": str(_csv_path())}
+    except Exception as e:
+        return {"error": str(e)}

@@ -67,22 +67,10 @@ def _ordinal_suffix(day: int) -> str:
     return f" {day}{suffix}"
 
 
-def _join_names(names: list[str]) -> str:
-    """Join technician names in a natural spoken way."""
-    if not names:
-        return ""
-    if len(names) == 1:
-        return names[0]
-    if len(names) == 2:
-        return f"{names[0]} or {names[1]}"
-    return f"{', '.join(names[:-1])}, or {names[-1]}"
-
-
 def _spoken_slot_line(slot: dict) -> str:
     """Create one clean spoken availability line."""
     spoken_date = _format_spoken_date(slot["date"])
-    technicians = _join_names(slot["available_technicians"])
-    return f"{spoken_date} at {slot['time']} with {technicians}"
+    return f"{spoken_date} at {slot['time']}"
 
 
 def _date_in_range(value: str, start_date: str, end_date: str) -> bool:
@@ -114,11 +102,30 @@ def _available_technicians(date: str, time: str) -> list[str]:
 
 
 def _find_csv_appointment(appointment_id: str) -> dict | None:
-    normalized_id = appointment_id.upper()
+    normalized_id = _normalize_appointment_id(appointment_id)
     for row in csv_service.list_appointments():
         if row.get("Appointment ID") == normalized_id:
             return row
     return None
+
+
+def _normalize_appointment_id(appointment_id: str) -> str:
+    """Accept bare numeric appointment numbers like 3487 as APT-3487."""
+    cleaned = "".join(ch for ch in appointment_id.upper() if ch.isalnum() or ch == "-")
+    digits = "".join(ch for ch in cleaned if ch.isdigit())
+    if cleaned.startswith("APT-"):
+        return cleaned
+    if cleaned.startswith("APT") and digits:
+        return f"APT-{digits}"
+    if digits:
+        return f"APT-{digits}"
+    return cleaned
+
+
+def _first_name(value: str) -> str:
+    """Return the normalized first name from a full name string."""
+    cleaned = " ".join(value.strip().split()).lower()
+    return cleaned.split()[0] if cleaned else ""
 
 
 def _find_account_by_name(customer_name: str) -> tuple[str, dict] | None:
@@ -156,6 +163,18 @@ def _register_customer(customer_name: str) -> tuple[str, dict, bool]:
     }
     ACCOUNTS[account_number] = account
     return account_number, account, True
+
+
+def _update_account_name(account_number: str, customer_name: str) -> None:
+    """Update the stored account name when a caller corrects it."""
+    cleaned_name = " ".join(customer_name.strip().split())
+    if not cleaned_name:
+        return
+    account = ACCOUNTS.get(account_number.upper())
+    if not account:
+        return
+    account["full_name"] = cleaned_name
+    account["last_name"] = cleaned_name.split()[-1]
 
 # ── Tool functions ─────────────────────────────────────────────────────────────
 
@@ -357,12 +376,56 @@ def book_appointment(customer_name: str, date: str, time: str, service_type: str
     }
 
 
-def cancel_appointment(customer_name: str, appointment_id: str) -> dict:
-    """Cancel an existing service appointment."""
+def update_appointment_customer_name(appointment_id: str, customer_name: str) -> dict:
+    """Update the customer name on an existing appointment."""
     cleaned_name = " ".join(customer_name.strip().split())
     if not cleaned_name:
         return {"success": False, "reason": "Customer name is required."}
-    appointment_key = appointment_id.upper()
+
+    appointment_key = _normalize_appointment_id(appointment_id)
+    existing = APPOINTMENTS.get(appointment_key)
+    csv_row = _find_csv_appointment(appointment_key)
+    if not existing and csv_row:
+        existing = {
+            "account": csv_row["Account"],
+            "date": csv_row["Date"],
+            "time": csv_row["Time"],
+            "service": csv_row["Service"],
+            "tech": csv_row["Technician"],
+        }
+        APPOINTMENTS[appointment_key] = existing
+    if not existing:
+        return {"success": False, "reason": "Appointment ID not found."}
+
+    account_number = existing.get("account", "")
+    if account_number:
+        _update_account_name(account_number, cleaned_name)
+
+    sheet_result = csv_service.update_appointment_customer_row(
+        appointment_key,
+        cleaned_name,
+    )
+    if sheet_result.get("error"):
+        return {"success": False, "reason": sheet_result["error"]}
+
+    return {
+        "success": True,
+        "appointment_id": appointment_key,
+        "customer": cleaned_name,
+        "date": existing["date"],
+        "time": existing["time"],
+        "service": existing["service"],
+        "technician": existing["tech"],
+        "message": "I updated the appointment to the corrected customer name.",
+    }
+
+
+def cancel_appointment(first_name: str, appointment_id: str) -> dict:
+    """Cancel an existing service appointment."""
+    cleaned_first_name = _first_name(first_name)
+    if not cleaned_first_name:
+        return {"success": False, "reason": "First name is required."}
+    appointment_key = _normalize_appointment_id(appointment_id)
     existing = APPOINTMENTS.get(appointment_key)
     csv_row = _find_csv_appointment(appointment_key)
     if not existing and csv_row:
@@ -382,10 +445,10 @@ def cancel_appointment(customer_name: str, appointment_id: str) -> dict:
     elif existing.get("account") and existing["account"] in ACCOUNTS:
         recorded_name = ACCOUNTS[existing["account"]]["full_name"]
 
-    if recorded_name and recorded_name.lower() != cleaned_name.lower():
+    if recorded_name and _first_name(recorded_name) != cleaned_first_name:
         return {
             "success": False,
-            "reason": "The name does not match the appointment on file.",
+            "reason": "The first name does not match the appointment on file.",
         }
 
     cancelled = APPOINTMENTS.pop(appointment_key, existing)
@@ -393,7 +456,7 @@ def cancel_appointment(customer_name: str, appointment_id: str) -> dict:
     return {
         "success": True,
         "appointment_id": appointment_key,
-        "customer": recorded_name or cleaned_name,
+        "customer": recorded_name or cleaned_first_name.title(),
         "service": cancelled["service"],
         "date": cancelled["date"],
         "time": cancelled["time"],
@@ -434,6 +497,7 @@ _REGISTRY = {
     "get_order_status":       get_order_status,
     "get_available_slots":    get_available_slots,
     "book_appointment":       book_appointment,
+    "update_appointment_customer_name": update_appointment_customer_name,
     "cancel_appointment":     cancel_appointment,
     "estimate_arrival_time":  estimate_arrival_time,
 }
