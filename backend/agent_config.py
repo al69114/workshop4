@@ -8,6 +8,30 @@ MODEL = "gemini-3.1-flash-live-preview"
 INPUT_AUDIO_SAMPLE_RATE = 16_000
 OUTPUT_AUDIO_SAMPLE_RATE = 24_000
 OPENING_PROMPT = "[Call connected. Deliver the short opening greeting now.]"
+SUPPORTED_LANGUAGES = {
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+}
+LANGUAGE_OPENINGS = {
+    "en": "Thank you for calling AirPro HVAC Services! My name is Alex, and I'm happy to help you today. What can I help you with?",
+    "es": "Gracias por llamar a AirPro HVAC Services. Mi nombre es Alex y con gusto le ayudo hoy. ¿En qué le puedo ayudar?",
+    "fr": "Merci d'avoir appelé AirPro HVAC Services. Je m'appelle Alex et je suis heureux de vous aider aujourd'hui. Comment puis-je vous aider ?",
+    "de": "Danke, dass Sie AirPro HVAC Services angerufen haben. Mein Name ist Alex und ich helfe Ihnen heute gern. Womit kann ich Ihnen helfen?",
+    "it": "Grazie per aver chiamato AirPro HVAC Services. Mi chiamo Alex e sono felice di aiutarla oggi. In cosa posso aiutarla?",
+    "pt": "Obrigado por ligar para a AirPro HVAC Services. Meu nome é Alex e fico feliz em ajudar você hoje. Como posso ajudar?",
+}
+LANGUAGE_OPTION_SUMMARIES = {
+    "en": "I can help with scheduling, cancellations, rescheduling, order status, or basic troubleshooting. What do you need today?",
+    "es": "Puedo ayudarle con citas nuevas, cancelaciones, cambios de cita, estado de órdenes o solución básica de problemas. ¿Qué necesita hoy?",
+    "fr": "Je peux vous aider pour une nouvelle réservation, une annulation, un changement de rendez-vous, le statut d'une commande ou un dépannage de base. De quoi avez-vous besoin aujourd'hui ?",
+    "de": "Ich kann Ihnen bei neuen Terminen, Stornierungen, Terminänderungen, dem Status eines Auftrags oder bei einfacher Fehlerbehebung helfen. Wobei brauchen Sie heute Hilfe?",
+    "it": "Posso aiutarla con nuove prenotazioni, cancellazioni, riprogrammazioni, stato degli ordini o assistenza di base. Di cosa ha bisogno oggi?",
+    "pt": "Posso ajudar com agendamentos, cancelamentos, remarcações, status de pedidos ou solução básica de problemas. Do que você precisa hoje?",
+}
 
 SYSTEM_PROMPT = """
 You are a professional and friendly customer service agent for AirPro HVAC Services.
@@ -45,12 +69,12 @@ Your job is to handle inbound customer calls efficiently and helpfully.
 - Confirm the cancellation clearly
 
 ### Option 3 — Update / Reschedule
-- Verify account first
-- Call get_appointments to show current bookings
+- Ask for the caller's first name and appointment number
+- Accept either a bare appointment number like 3487 or a full ID like APT-3487
 - Call get_available_slots to show new options
 - When reading reschedule options, say only the date and time for each opening
 - After listing the openings, offer to repeat them more slowly if needed
-- Call reschedule_appointment once they confirm the new time
+- Call reschedule_appointment with the first name, appointment number, and new time once they confirm the new slot
 - Read back the new date and time to confirm
 
 ### Option 4 — Order Status
@@ -65,8 +89,9 @@ Your job is to handle inbound customer calls efficiently and helpfully.
 - Unit won't turn on: Check thermostat batteries, breaker, emergency shutoff switch
 
 ## Account Verification Rules
-- Always call verify_account (account number + last name) before existing-account actions that need account access, such as reschedules or account lookups
+- Always call verify_account (account number + last name) before existing-account actions that need account access, such as account lookups
 - Do not ask for account verification for a cancellation when the caller provides their first name and appointment number
+- Do not ask for account verification for a reschedule when the caller provides their first name and appointment number
 - Account format: ACC-XXXX (e.g. ACC-1001)
 - Never share details or make changes until verified
 
@@ -115,13 +140,17 @@ TOOLS = [
             ),
             types.FunctionDeclaration(
                 name="reschedule_appointment",
-                description="Reschedule an existing service appointment to a new date and time.",
+                description="Reschedule an existing service appointment using the customer's first name, appointment number, and the new date and time.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
+                        "first_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Customer first name on the appointment",
+                        ),
                         "appointment_id": types.Schema(
                             type=types.Type.STRING,
-                            description="Appointment ID to reschedule, e.g. APT-4001",
+                            description="Appointment number or full ID to reschedule, e.g. 4001 or APT-4001",
                         ),
                         "new_date": types.Schema(
                             type=types.Type.STRING,
@@ -132,7 +161,7 @@ TOOLS = [
                             description="New time, e.g. '10:00 AM'",
                         ),
                     },
-                    required=["appointment_id", "new_date", "new_time"],
+                    required=["first_name", "appointment_id", "new_date", "new_time"],
                 ),
             ),
             types.FunctionDeclaration(
@@ -262,8 +291,18 @@ APPOINTMENT_TOOLS = {
 }
 
 
-def build_live_config(voice_name: str, voice_style: str) -> types.LiveConnectConfig:
+def build_live_config(
+    voice_name: str,
+    voice_style: str,
+    language_code: str = "en",
+) -> types.LiveConnectConfig:
     """Create a consistent Gemini Live config for both terminal and browser sessions."""
+    language_name = SUPPORTED_LANGUAGES.get(language_code, SUPPORTED_LANGUAGES["en"])
+    opening_line = LANGUAGE_OPENINGS.get(language_code, LANGUAGE_OPENINGS["en"])
+    option_summary = LANGUAGE_OPTION_SUMMARIES.get(
+        language_code,
+        LANGUAGE_OPTION_SUMMARIES["en"],
+    )
     config_kwargs = {
         "response_modalities": ["AUDIO"],
         "speech_config": types.SpeechConfig(
@@ -276,7 +315,18 @@ def build_live_config(voice_name: str, voice_style: str) -> types.LiveConnectCon
         "system_instruction": types.Content(
             parts=[
                 types.Part(
-                    text=f"{SYSTEM_PROMPT}\n\n## Speaking Style\n{voice_style}"
+                    text=(
+                        f"{SYSTEM_PROMPT}\n\n"
+                        f"## Response Language\n"
+                        f"- Speak entirely in {language_name} unless the caller clearly asks to switch languages\n"
+                        f"- Do not answer in English when {language_name} is selected unless the caller explicitly switches to English\n"
+                        f"- Keep all greetings, follow-up questions, confirmations, booking prompts, cancellation prompts, rescheduling prompts, troubleshooting steps, and closing lines in {language_name}\n"
+                        f"- Keep appointment IDs, order IDs, and exact names accurate when reading them aloud\n\n"
+                        f"## Selected Language Opening\n"
+                        f'- Use this exact opening in {language_name}: "{opening_line}"\n'
+                        f"- If the caller asks what you can help with, use this concise wording in {language_name}: \"{option_summary}\"\n\n"
+                        f"## Speaking Style\n{voice_style}"
+                    )
                 )
             ]
         ),

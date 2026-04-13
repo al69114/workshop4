@@ -68,7 +68,7 @@ async def run_agent(voice: dict) -> None:
         )
 
     client = genai.Client(api_key=api_key)
-    config = build_live_config(voice["name"], voice["style"])
+    config = build_live_config(voice["name"], voice["style"], "en")
 
     pa = pyaudio.PyAudio()
     mic_stream = pa.open(

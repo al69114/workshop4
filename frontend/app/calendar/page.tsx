@@ -83,11 +83,16 @@ export default function CalendarPage() {
         appointment?: {
           appointment_id?: string;
           date?: string;
+          old_date?: string;
         };
       };
       if (payload.type === "appointments_updated") {
         void loadAppointments();
-        if (payload.action === "book_appointment" && payload.appointment?.date) {
+        if (
+          (payload.action === "book_appointment" ||
+            payload.action === "reschedule_appointment") &&
+          payload.appointment?.date
+        ) {
           const bookedDate = parseAppointmentDate(payload.appointment.date);
           setSelectedDate(payload.appointment.date);
           setVisibleMonth(monthStart(bookedDate));

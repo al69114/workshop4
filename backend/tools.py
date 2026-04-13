@@ -213,9 +213,18 @@ def get_appointments(account_number: str) -> dict:
     return {"found": True, "appointments": appts}
 
 
-def reschedule_appointment(appointment_id: str, new_date: str, new_time: str) -> dict:
+def reschedule_appointment(
+    first_name: str,
+    appointment_id: str,
+    new_date: str,
+    new_time: str,
+) -> dict:
     """Reschedule an existing appointment to a new date and time."""
-    appointment_key = appointment_id.upper()
+    cleaned_first_name = _first_name(first_name)
+    if not cleaned_first_name:
+        return {"success": False, "reason": "First name is required."}
+
+    appointment_key = _normalize_appointment_id(appointment_id)
     existing = APPOINTMENTS.get(appointment_key)
     csv_row = _find_csv_appointment(appointment_key)
     if not existing and csv_row:
@@ -229,6 +238,19 @@ def reschedule_appointment(appointment_id: str, new_date: str, new_time: str) ->
         APPOINTMENTS[appointment_key] = existing
     if not existing:
         return {"success": False, "reason": "Appointment ID not found."}
+
+    recorded_name = ""
+    if csv_row and csv_row.get("Customer"):
+        recorded_name = " ".join(csv_row["Customer"].strip().split())
+    elif existing.get("account") and existing["account"] in ACCOUNTS:
+        recorded_name = ACCOUNTS[existing["account"]]["full_name"]
+
+    if recorded_name and _first_name(recorded_name) != cleaned_first_name:
+        return {
+            "success": False,
+            "reason": "The first name does not match the appointment on file.",
+        }
+
     if not _slot_is_offered(new_date, new_time):
         return {
             "success": False,
@@ -255,7 +277,8 @@ def reschedule_appointment(appointment_id: str, new_date: str, new_time: str) ->
     )
     return {
         "success": True,
-        "appointment_id": appointment_id.upper(),
+        "appointment_id": appointment_key,
+        "customer": recorded_name or cleaned_first_name.title(),
         "service": existing["service"],
         "old_date": old_date,
         "old_time": old_time,

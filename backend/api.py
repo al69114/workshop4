@@ -27,6 +27,7 @@ from agent_config import (
     INPUT_AUDIO_SAMPLE_RATE,
     MODEL,
     OPENING_PROMPT,
+    SUPPORTED_LANGUAGES,
     build_live_config,
 )
 from services import csv_service
@@ -152,6 +153,16 @@ def _resolve_voice(choice: str | None) -> dict:
         if voice["name"].lower() == lowered:
             return voice
     return VOICES["1"]
+
+
+def _resolve_language(choice: str | None) -> str:
+    """Resolve a supported UI language code for the live session."""
+    if not choice:
+        return "en"
+    lowered = choice.strip().lower()
+    if lowered in SUPPORTED_LANGUAGES:
+        return lowered
+    return "en"
 
 
 async def _receive_browser_audio(
@@ -371,14 +382,18 @@ async def _send_model_audio(
                     await broadcast(event)
                     result = tools.dispatch(func_call.name, args)
                     if func_call.name in APPOINTMENT_TOOLS and result.get("success"):
+                        appointment_date = result.get("date") or result.get("new_date")
+                        appointment_time = result.get("time") or result.get("new_time")
                         appointment_events.append(
                             {
                                 "type": "appointments_updated",
                                 "action": func_call.name,
                                 "appointment": {
                                     "appointment_id": result.get("appointment_id"),
-                                    "date": result.get("date"),
-                                    "time": result.get("time"),
+                                    "date": appointment_date,
+                                    "time": appointment_time,
+                                    "old_date": result.get("old_date"),
+                                    "old_time": result.get("old_time"),
                                     "customer": result.get("customer"),
                                     "service": result.get("service"),
                                     "technician": result.get("technician"),
@@ -440,13 +455,20 @@ async def voice_endpoint(websocket: WebSocket) -> None:
         return
 
     voice = _resolve_voice(websocket.query_params.get("voice"))
+    language = _resolve_language(websocket.query_params.get("language"))
     client = genai.Client(api_key=api_key)
-    config = build_live_config(voice["name"], voice["style"])
+    config = build_live_config(voice["name"], voice["style"], language)
 
     try:
         async with client.aio.live.connect(model=MODEL, config=config) as session:
             await websocket.send_text(
-                json.dumps({"type": "session_ready", "voice": voice["name"]})
+                json.dumps(
+                    {
+                        "type": "session_ready",
+                        "voice": voice["name"],
+                        "language": language,
+                    }
+                )
             )
             await _send_voice_event(
                 websocket, {"type": "agent_state", "value": "speaking"}

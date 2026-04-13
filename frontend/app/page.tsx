@@ -32,6 +32,14 @@ const VOICE_OPTIONS = [
   { value: "7", label: "Orus", detail: "Confident" },
   { value: "8", label: "Zephyr", detail: "Calm" },
 ] as const;
+const LANGUAGE_OPTIONS = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "it", label: "Italian" },
+  { value: "pt", label: "Portuguese" },
+] as const;
 const MICROPHONE_CONSTRAINTS: MediaTrackConstraints = {
   channelCount: 1,
   echoCancellation: true,
@@ -294,6 +302,8 @@ export default function DashboardPage() {
   const [highlightAppointments, setHighlightAppointments] = useState(false);
   const [selectedVoice, setSelectedVoice] =
     useState<(typeof VOICE_OPTIONS)[number]["value"]>("1");
+  const [selectedLanguage, setSelectedLanguage] =
+    useState<(typeof LANGUAGE_OPTIONS)[number]["value"]>("en");
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -611,7 +621,7 @@ export default function DashboardPage() {
       sink.connect(inputContext.destination);
 
       const voiceSocket = new WebSocket(
-        `${wsUrl("/voice")}?voice=${encodeURIComponent(selectedVoice)}`,
+        `${wsUrl("/voice")}?voice=${encodeURIComponent(selectedVoice)}&language=${encodeURIComponent(selectedLanguage)}`,
       );
       voiceSocket.binaryType = "arraybuffer";
 
@@ -725,6 +735,27 @@ export default function DashboardPage() {
                   {VOICE_OPTIONS.map((voice) => (
                     <option key={voice.value} value={voice.value}>
                       {voice.label} — {voice.detail}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex w-full min-w-[260px] flex-col gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  Agent Language
+                </span>
+                <select
+                  value={selectedLanguage}
+                  onChange={(event) =>
+                    setSelectedLanguage(
+                      event.target.value as (typeof LANGUAGE_OPTIONS)[number]["value"],
+                    )
+                  }
+                  disabled={callState !== "idle"}
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-stone-100 outline-none transition focus:border-amber-300/40 focus:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {LANGUAGE_OPTIONS.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
                     </option>
                   ))}
                 </select>
