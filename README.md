@@ -1,160 +1,261 @@
 # AirPro HVAC Voice Agent
 
-A real-time AI phone agent powered by the **Gemini Live API** that handles inbound customer calls for an HVAC company — booking, cancellations, rescheduling, order status checks, account verification, and basic troubleshooting.
+A real-time HVAC phone agent built with the Gemini Live API, a Python backend, and a Next.js frontend.
 
-Customers speak naturally, the agent responds with voice, and every appointment change is written to a CSV file the HVAC team can open at any time.
+The app supports:
+- browser-based voice conversations with the agent
+- a live dashboard for transcripts, tool calls, and appointment updates
+- a calendar view that updates when appointments are booked, cancelled, or rescheduled
+- an optional terminal microphone agent for local testing
 
----
+## Architecture
 
-## How it works
-
+```text
+Browser mic / terminal mic
+        ↓
+Gemini Live API
+        ↓
+Python backend tools
+        ↓
+appointments.csv
+        ↓
+Next.js dashboard + calendar
 ```
-Customer speaks → Gemini Live API → Calls a tool (book/cancel/reschedule) → Speaks result back
-                  (native audio)         ↓
-                                  appointments.csv updated in real time
+
+Notes:
+- Gemini handles the actual audio input and audio output.
+- The backend code handles tool calls, transcript cleanup, websocket events, and CSV persistence.
+- The frontend renders the live conversation, appointment ledger, and calendar updates.
+
+## Repo Layout
+
+```text
+workshop4/
+├── backend/
+│   ├── main.py                 # Starts the backend API server on port 8000
+│   ├── api.py                  # FastAPI app + /ws dashboard socket + /voice call socket
+│   ├── agent_config.py         # Gemini model, prompt, tool schema, live config
+│   ├── terminal_agent.py       # Optional local mic + speaker agent
+│   ├── tools.py                # Mock HVAC business logic and tool dispatcher
+│   ├── voices.py               # Voice options
+│   ├── appointments.csv        # CSV-backed appointment store
+│   ├── requirements.txt
+│   └── services/
+│       └── csv_service.py      # CSV reads, writes, and seed data
+├── frontend/
+│   ├── app/page.tsx            # Main dashboard + browser voice agent
+│   ├── app/calendar/page.tsx   # Live calendar view
+│   ├── app/layout.tsx          # App shell + nav
+│   ├── components/site-nav.tsx
+│   └── lib/backend.ts          # Frontend API and websocket types/helpers
+└── README.md
 ```
 
-- **No separate STT or TTS** — Gemini handles voice in and voice out natively
-- **Function calling** — agent can look up and update real data mid-conversation
-- **CSV tracking** — every appointment action is logged automatically
+## Requirements
 
----
+### Backend
+
+- Python 3.10+ recommended
+- Gemini API key
+- PortAudio if you want to use the optional terminal microphone agent
+
+### Frontend
+
+- Node.js 18+ recommended
 
 ## Setup
 
-### 1. Install PortAudio (required by PyAudio)
+### 1. Backend environment
 
-**macOS**
-```bash
-brew install portaudio
-```
-
-**Ubuntu / Debian**
-```bash
-sudo apt-get install portaudio19-dev
-```
-
-### 2. Create and activate a virtual environment
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install backend dependencies
+From the repo root:
 
 ```bash
 cd backend
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+Create `backend/.env` and add:
+
+```env
+GEMINI_API_KEY=your_api_key_here
+APPOINTMENTS_CSV=appointments.csv
+```
+
+`APPOINTMENTS_CSV` is resolved relative to `backend/` unless you provide an absolute path.
+
+### 2. Frontend environment
+
+```bash
+cd frontend
+npm install
+```
+
+If needed, set:
+
+```env
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+```
+
+The frontend defaults to `http://localhost:8000`, so this is optional for local development.
+
+## Running The App
+
+### Backend API
 
 ```bash
 cd backend
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```
-GEMINI_API_KEY=your_api_key_here      # https://aistudio.google.com/apikey
-APPOINTMENTS_CSV=appointments.csv     # path to the CSV file (auto-created)
-```
-
-### 5. Run the backend API
-
-```bash
-cd backend
+source venv/bin/activate
 python main.py
 ```
 
-### 6. Run the frontend
+This starts the FastAPI backend on `http://localhost:8000`.
+
+### Frontend dashboard
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Open `http://localhost:3000`, then start the browser-based agent from the UI.
+Open:
+- `http://localhost:3000` for the main dashboard
+- `http://localhost:3000/calendar` for the calendar page
 
-### 7. Optional: run the terminal microphone agent
+### Optional terminal agent
+
+If you want to talk to the agent directly from your computer microphone and speakers:
 
 ```bash
 cd backend
+source venv/bin/activate
 python terminal_agent.py
 ```
 
----
+For the terminal agent only, install PortAudio first.
 
-## What the agent can do
+macOS:
+```bash
+brew install portaudio
+```
 
-| Option | What happens |
-|---|---|
-| **Book appointment / Emergency** | Verifies account → shows available slots → books → writes to CSV |
-| **Cancel appointment** | Verifies account → shows appointments → cancels → updates CSV |
-| **Reschedule appointment** | Verifies account → shows slots → moves appointment → updates CSV |
-| **Order status** | Looks up a service or parts order by ID |
-| **Troubleshooting** | Walks the customer through common HVAC fixes over the phone |
+Ubuntu / Debian:
+```bash
+sudo apt-get install portaudio19-dev
+```
 
----
+## Frontend
 
-## Test data
+The frontend has two main screens.
 
-Use these with the mock data in `backend/tools.py`:
+### Dashboard
 
-| What | Value |
+`/`
+
+Features:
+- `Interact With Agent` button for browser voice calls
+- live conversation panel
+- agent status badges
+- tool call stream
+- appointment ledger that refreshes after tool actions
+
+### Calendar
+
+`/calendar`
+
+Features:
+- month view of appointments
+- selected-day appointment list
+- occupied vs available technicians
+- automatic refresh when bookings, cancellations, or reschedules happen
+- auto-focus to the booked day after a successful Option 1 booking
+
+## Backend
+
+The backend exposes:
+
+- `GET /appointments`
+- `WS /ws` for dashboard events
+- `WS /voice` for the browser voice session
+
+The backend is responsible for:
+- connecting to Gemini Live
+- forwarding browser PCM audio to Gemini
+- returning agent audio back to the browser
+- handling tool calls
+- updating `appointments.csv`
+- broadcasting live transcript, tool-call, status, and appointment-update events
+
+## Voice / Transcription Flow
+
+Transcription is a mix of API output and app code:
+
+- Gemini Live performs the actual input and output audio transcription
+- the backend enables that in `backend/agent_config.py`
+- the backend merges and normalizes transcript chunks in `backend/api.py`
+- the frontend renders those transcript events in the live conversation panel
+
+So:
+- speech-to-text itself comes from the Gemini API
+- transcript cleanup and display behavior come from your code
+
+## Current Call Flows
+
+### Option 1: Schedule or emergency
+
+- Ask whether it is an emergency or a standard appointment
+- For standard scheduling, read only the next few openings in a short format
+- Ask if the caller wants the options repeated
+- Ask for the caller's full name after they choose a slot
+- Book the appointment and update the calendar/dashboard
+
+### Option 2: Cancel appointment
+
+- Ask for the caller's full name
+- Ask for the appointment ID
+- Cancel only if the provided name matches the appointment on file
+
+### Option 3: Reschedule appointment
+
+- Uses account verification
+- Looks up current appointments
+- Reads new openings
+- Reschedules and updates the calendar/dashboard
+
+### Option 4: Order status
+
+- Ask for an order ID such as `ORD-8001`
+
+### Option 5: Troubleshooting
+
+- No tool call required
+
+## Mock Test Data
+
+Useful values in the mock backend:
+
+| Type | Value |
 |---|---|
 | Account number | `ACC-1001` |
 | Last name | `Garcia` |
 | Appointment ID | `APT-4001` |
 | Order ID | `ORD-8001` |
 
----
-
-## Project structure
-
-```
-workshop4/
-├── backend/
-│   ├── main.py              # FastAPI backend server
-│   ├── terminal_agent.py    # Optional local microphone agent
-│   ├── api.py               # FastAPI + browser voice websocket
-│   ├── tools.py             # HVAC business logic + tool dispatcher
-│   ├── voices.py            # Voice options and speaking personalities
-│   ├── services/
-│   │   └── csv_service.py   # Reads and writes appointments.csv
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/
-└── .gitignore
-```
-
-**To connect a real backend:** replace the mock data and functions in `backend/tools.py` with calls to your actual CRM, scheduling system, or database. The agent logic in `backend/main.py` and `backend/api.py` does not need to change.
-
----
-
-## Available voices
-
-| # | Voice | Character |
-|---|---|---|
-| 1 | Aoede | Warm, conversational (default) |
-| 2 | Puck | Upbeat, energetic |
-| 3 | Charon | Deep, authoritative |
-| 4 | Kore | Clear, neutral |
-| 5 | Fenrir | Expressive |
-| 6 | Leda | Friendly |
-| 7 | Orus | Confident |
-| 8 | Zephyr | Calm |
-
----
-
 ## Model
 
-| Property | Value |
-|---|---|
-| Model | `gemini-2.5-flash-native-audio-preview-12-2025` |
-| Input | Live microphone audio (16 kHz PCM) |
-| Output | Native audio (24 kHz PCM) |
-| Function calling | Supported |
-| Thinking | Disabled (not needed for real-time voice) |
+Current live audio model:
+
+- `gemini-3.1-flash-live-preview`
+
+Notes:
+- the backend uses Gemini Live audio input/output
+- browser opening prompts are sent with `send_realtime_input(...)`
+- the voice socket is run through the backend, not directly from the frontend to Gemini
+
+## Development Notes
+
+- Appointment data is stored in `backend/appointments.csv`
+- Seed demo data is created when the CSV is empty
+- The calendar and dashboard both refresh from backend websocket events
+- To replace mock business logic with real systems, start with `backend/tools.py`
