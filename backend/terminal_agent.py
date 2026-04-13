@@ -22,8 +22,8 @@ from agent_config import (
     APPOINTMENT_TOOLS,
     INPUT_AUDIO_SAMPLE_RATE,
     MODEL,
-    OPENING_PROMPT,
     OUTPUT_AUDIO_SAMPLE_RATE,
+    build_opening_prompt,
     build_live_config,
 )
 from api import broadcast
@@ -96,7 +96,7 @@ async def run_agent(voice: dict) -> None:
     try:
         async with client.aio.live.connect(model=MODEL, config=config) as session:
             await broadcast({"type": "status", "value": "listening"})
-            await session.send_realtime_input(text=OPENING_PROMPT)
+            await session.send_realtime_input(text=build_opening_prompt("en"))
 
             async def stream_microphone() -> None:
                 while True:

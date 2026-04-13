@@ -37,12 +37,14 @@ VOICES = {
     },
     "4": {
         "name": "Kore",
-        "description": "Clear, neutral",
+        "description": "Professional, natural",
         "style": (
-            "Speak clearly and efficiently, like a professional call center agent. "
-            "Be friendly but focused. Use clear transitions like 'first', 'next', "
-            "'and finally' when walking through steps. Confirm details precisely — "
-            "always read back dates, times, and IDs to the customer."
+            "Speak like a polished, experienced customer service professional who "
+            "sounds natural and human, not robotic. Keep your tone warm, steady, "
+            "and composed. Use smooth, conversational phrasing with short natural "
+            "pauses. Avoid sounding overly scripted. Be clear and professional, "
+            "but still approachable. When confirming details, slow down slightly "
+            "and sound precise without losing warmth."
         ),
     },
     "5": {

@@ -7,12 +7,12 @@ from google.genai import types
 MODEL = "gemini-3.1-flash-live-preview"
 INPUT_AUDIO_SAMPLE_RATE = 16_000
 OUTPUT_AUDIO_SAMPLE_RATE = 24_000
-OPENING_PROMPT = "[Call connected. Deliver the short opening greeting now.]"
 SUPPORTED_LANGUAGES = {
     "en": "English",
     "es": "Spanish",
     "fr": "French",
     "de": "German",
+    "hi": "Hindi",
     "it": "Italian",
     "pt": "Portuguese",
 }
@@ -21,6 +21,7 @@ LANGUAGE_OPENINGS = {
     "es": "Gracias por llamar a AirPro HVAC Services. Mi nombre es Alex y con gusto le ayudo hoy. ¿En qué le puedo ayudar?",
     "fr": "Merci d'avoir appelé AirPro HVAC Services. Je m'appelle Alex et je suis heureux de vous aider aujourd'hui. Comment puis-je vous aider ?",
     "de": "Danke, dass Sie AirPro HVAC Services angerufen haben. Mein Name ist Alex und ich helfe Ihnen heute gern. Womit kann ich Ihnen helfen?",
+    "hi": "AirPro HVAC Services को कॉल करने के लिए धन्यवाद। मेरा नाम Alex है, और मैं आज आपकी मदद करके खुश हूँ। मैं आपकी किस तरह मदद कर सकता हूँ?",
     "it": "Grazie per aver chiamato AirPro HVAC Services. Mi chiamo Alex e sono felice di aiutarla oggi. In cosa posso aiutarla?",
     "pt": "Obrigado por ligar para a AirPro HVAC Services. Meu nome é Alex e fico feliz em ajudar você hoje. Como posso ajudar?",
 }
@@ -29,9 +30,26 @@ LANGUAGE_OPTION_SUMMARIES = {
     "es": "Puedo ayudarle con citas nuevas, cancelaciones, cambios de cita, estado de órdenes o solución básica de problemas. ¿Qué necesita hoy?",
     "fr": "Je peux vous aider pour une nouvelle réservation, une annulation, un changement de rendez-vous, le statut d'une commande ou un dépannage de base. De quoi avez-vous besoin aujourd'hui ?",
     "de": "Ich kann Ihnen bei neuen Terminen, Stornierungen, Terminänderungen, dem Status eines Auftrags oder bei einfacher Fehlerbehebung helfen. Wobei brauchen Sie heute Hilfe?",
+    "hi": "मैं नई अपॉइंटमेंट बुक करने, कैंसिल करने, रीशेड्यूल करने, ऑर्डर स्टेटस बताने या बेसिक ट्रबलशूटिंग में मदद कर सकता हूँ। आपको आज किस चीज़ में मदद चाहिए?",
     "it": "Posso aiutarla con nuove prenotazioni, cancellazioni, riprogrammazioni, stato degli ordini o assistenza di base. Di cosa ha bisogno oggi?",
     "pt": "Posso ajudar com agendamentos, cancelamentos, remarcações, status de pedidos ou solução básica de problemas. Do que você precisa hoje?",
 }
+
+
+def build_opening_prompt(language_code: str = "en") -> str:
+    """Create a language-specific first-turn instruction for the live call."""
+    language_name = SUPPORTED_LANGUAGES.get(language_code, SUPPORTED_LANGUAGES["en"])
+    opening_line = LANGUAGE_OPENINGS.get(language_code, LANGUAGE_OPENINGS["en"])
+    option_summary = LANGUAGE_OPTION_SUMMARIES.get(
+        language_code,
+        LANGUAGE_OPTION_SUMMARIES["en"],
+    )
+    return (
+        "[Call connected. "
+        f"Respond entirely in {language_name}. "
+        f'Start with this exact greeting: "{opening_line}" '
+        f'If the caller asks what you can help with, use this wording: "{option_summary}".]'
+    )
 
 SYSTEM_PROMPT = """
 You are a professional and friendly customer service agent for AirPro HVAC Services.
@@ -60,6 +78,7 @@ Your job is to handle inbound customer calls efficiently and helpfully.
 - After the caller confirms their full name and chosen slot, read the name, date, and time back one more time to finalize the booking details
 - Before booking, call get_slot_technicians for that exact date and time and tell the caller which technicians are available for that chosen slot
 - If the caller wants a different technician, call get_technician_slots to find another time for that technician and offer the matching openings
+- Accept either a technician's first name or full name when the caller asks for a specific technician
 - If the caller picks one of those alternate openings, confirm the new date, time, and technician, then call book_appointment with technician_name set
 - If the caller is happy with one of the technicians already available for the chosen slot, call book_appointment with that technician_name
 - If the caller corrects their name after the booking is already created, call update_appointment_customer_name right away and confirm that the appointment record was fixed
@@ -95,7 +114,9 @@ Your job is to handle inbound customer calls efficiently and helpfully.
 
 ## Technician Questions
 - If the caller asks about a technician by name, call get_technician_feedback
-- Read the rating and summary word for word
+- Accept either a technician's first name or full name when looking them up
+- Read the rating using the tool's exact `rating_text` field so the scale stays "out of 10"
+- Then read the summary word for word
 
 ## Account Verification Rules
 - Always call verify_account (account number + last name) before existing-account actions that need account access, such as account lookups

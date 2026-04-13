@@ -26,8 +26,8 @@ from agent_config import (
     APPOINTMENT_TOOLS,
     INPUT_AUDIO_SAMPLE_RATE,
     MODEL,
-    OPENING_PROMPT,
     SUPPORTED_LANGUAGES,
+    build_opening_prompt,
     build_live_config,
 )
 from services import csv_service
@@ -474,7 +474,7 @@ async def voice_endpoint(websocket: WebSocket) -> None:
                 websocket, {"type": "agent_state", "value": "speaking"}
             )
             await broadcast({"type": "status", "value": "speaking"})
-            await session.send_realtime_input(text=OPENING_PROMPT)
+            await session.send_realtime_input(text=build_opening_prompt(language))
 
             browser_task = asyncio.create_task(
                 _receive_browser_audio(websocket, session)

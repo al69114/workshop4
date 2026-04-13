@@ -68,22 +68,22 @@ TECHNICIAN_FEEDBACK = {
     "ryan majd": {
         "technician": "Ryan Majd",
         "rating": 9.0,
-        "summary": "Brilliant critical thinker with a reputation for solving tough HVAC problems quickly.",
+        "summary": "Brilliant critical thinker with a reputation for solving tough HVAC problems quickly and is about to retire.",
     },
     "juvis mbeng": {
         "technician": "Juvis Mbeng",
         "rating": 5.0,
-        "summary": "He got kind of got drunk on the job and had 15 cans of red bull on the retreat and can solve issues at home",
+        "summary": "High-energy technician who usually gets drunk on the job and had 15 cans of red bull if there is no vodka and can solve issues at home. ",
     },
     "yash verma": {
         "technician": "Yash Verma",
         "rating": 7.0,
-        "summary": "He drank a gallon of milk puked all over the AC and is new to the job and hacked the hvac to hack into kronos",
+        "summary": "Drank a gallon of milk puked all over the AC and is new to the job and hacked the hvac to hack into kronos",
     },
     "shishir lohar": {
         "technician": "Shishir Lohar",
         "rating": 2.5,
-        "summary": "Got drunk on the job and exploded krishna's hvac and is the goated little bro and is below average at installing new units but not great at repairs",
+        "summary": "He got drunk on the job and exploded krishna's hvac and is below average in installing units but a hundred percent genius when it comes to exploding units.",
     },
 }
 
@@ -169,6 +169,38 @@ def _first_name(value: str) -> str:
     """Return the normalized first name from a full name string."""
     cleaned = " ".join(value.strip().split()).lower()
     return cleaned.split()[0] if cleaned else ""
+
+
+def _resolve_technician_name(technician_name: str) -> str | None:
+    """Resolve a technician from a full name, first name, or unique partial match."""
+    cleaned = " ".join(technician_name.strip().split()).lower()
+    if not cleaned:
+        return None
+
+    exact_match = next(
+        (technician for technician in TECHNICIANS if technician.lower() == cleaned),
+        None,
+    )
+    if exact_match:
+        return exact_match
+
+    first_name_matches = [
+        technician
+        for technician in TECHNICIANS
+        if technician.split()[0].lower() == cleaned
+    ]
+    if len(first_name_matches) == 1:
+        return first_name_matches[0]
+
+    partial_matches = [
+        technician
+        for technician in TECHNICIANS
+        if cleaned in technician.lower()
+    ]
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+
+    return None
 
 
 def _find_account_by_name(customer_name: str) -> tuple[str, dict] | None:
@@ -341,15 +373,17 @@ def get_order_status(order_id: str) -> dict:
 
 def get_technician_feedback(technician_name: str) -> dict:
     """Return a playful technician rating summary."""
-    normalized_name = " ".join(technician_name.strip().split()).lower()
-    feedback = TECHNICIAN_FEEDBACK.get(normalized_name)
-    if not feedback:
+    resolved_name = _resolve_technician_name(technician_name)
+    if not resolved_name:
         return {
             "found": False,
             "message": "I do not have technician feedback for that name.",
         }
+    feedback = TECHNICIAN_FEEDBACK.get(resolved_name.lower())
     return {
         "found": True,
+        "rating_scale": 10,
+        "rating_text": f"{feedback['rating']} out of 10",
         **feedback,
     }
 
@@ -432,8 +466,8 @@ def get_technician_slots(
     end_date: str = "",
 ) -> dict:
     """Return openings where a requested technician is available."""
-    cleaned_name = " ".join(technician_name.strip().split())
-    if cleaned_name not in TECHNICIANS:
+    resolved_name = _resolve_technician_name(technician_name)
+    if not resolved_name:
         return {
             "found": False,
             "reason": "That technician name was not found.",
@@ -446,26 +480,26 @@ def get_technician_slots(
         if not _date_in_range(date, normalized_start, normalized_end):
             continue
         for time in slot["times"]:
-            if cleaned_name in _available_technicians(date, time):
+            if resolved_name in _available_technicians(date, time):
                 matches.append(
                     {
                         "date": date,
                         "time": time,
-                        "technician": cleaned_name,
+                        "technician": resolved_name,
                     }
                 )
 
     if not matches:
         return {
             "found": False,
-            "technician": cleaned_name,
+            "technician": resolved_name,
             "reason": "That technician has no open slots in the current date range.",
         }
 
     spoken_lines = [_spoken_slot_line(slot) for slot in matches[:3]]
     return {
         "found": True,
-        "technician": cleaned_name,
+        "technician": resolved_name,
         "available_slots": matches,
         "spoken_summary": ". ".join(spoken_lines) + ".",
     }
@@ -497,14 +531,15 @@ def book_appointment(
         }
     requested_technician = " ".join(technician_name.strip().split())
     if requested_technician:
-        if requested_technician not in TECHNICIANS:
+        resolved_technician = _resolve_technician_name(requested_technician)
+        if not resolved_technician:
             return {
                 "success": False,
                 "reason": "That technician name was not found.",
             }
-        if requested_technician not in available_techs:
+        if resolved_technician not in available_techs:
             technician_alternatives = get_technician_slots(
-                requested_technician,
+                resolved_technician,
                 start_date=date,
                 end_date=AVAILABLE_SLOTS[-1]["date"],
             )
@@ -515,6 +550,7 @@ def book_appointment(
                 "technician_alternatives": technician_alternatives.get("available_slots", []),
                 "repeat_prompt": "I can keep the same time with a different technician or look for another time with your preferred technician.",
             }
+        requested_technician = resolved_technician
     account_number, acc, created_new_account = _register_customer(cleaned_name)
     appointment_id = "APT-" + "".join(random.choices(string.digits, k=4))
     assigned_tech = requested_technician or available_techs[0]
