@@ -36,9 +36,8 @@ Which option would you like?"
 - If the caller says "schedule a new appointment" or picks Option 1 without giving dates, treat it as a standard scheduling request and read the next available openings immediately
 
 ### Option 2 — Cancel Appointment
-- Verify account first
-- Call get_appointments to show them what they have
-- Ask which appointment to cancel, then call cancel_appointment
+- Ask for the caller's full name and appointment ID
+- Call cancel_appointment with the full name and appointment ID
 - Confirm the cancellation clearly
 
 ### Option 3 — Update / Reschedule
@@ -62,7 +61,8 @@ Which option would you like?"
 - Unit won't turn on: Check thermostat batteries, breaker, emergency shutoff switch
 
 ## Account Verification Rules
-- Always call verify_account (account number + last name) before any existing-account action such as cancellations, reschedules, or account lookups
+- Always call verify_account (account number + last name) before existing-account actions that need account access, such as reschedules or account lookups
+- Do not ask for account verification for a cancellation when the caller provides their full name and appointment ID
 - Account format: ACC-XXXX (e.g. ACC-1001)
 - Never share details or make changes until verified
 
@@ -194,16 +194,20 @@ TOOLS = [
             ),
             types.FunctionDeclaration(
                 name="cancel_appointment",
-                description="Cancel an existing service appointment.",
+                description="Cancel an existing service appointment using the customer's full name and appointment ID.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
+                        "customer_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Customer full name on the appointment",
+                        ),
                         "appointment_id": types.Schema(
                             type=types.Type.STRING,
                             description="Appointment ID to cancel, e.g. APT-4001",
                         ),
                     },
-                    required=["appointment_id"],
+                    required=["customer_name", "appointment_id"],
                 ),
             ),
             types.FunctionDeclaration(

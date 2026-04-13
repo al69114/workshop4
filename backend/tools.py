@@ -326,8 +326,11 @@ def book_appointment(customer_name: str, date: str, time: str, service_type: str
     }
 
 
-def cancel_appointment(appointment_id: str) -> dict:
+def cancel_appointment(customer_name: str, appointment_id: str) -> dict:
     """Cancel an existing service appointment."""
+    cleaned_name = " ".join(customer_name.strip().split())
+    if not cleaned_name:
+        return {"success": False, "reason": "Customer name is required."}
     appointment_key = appointment_id.upper()
     existing = APPOINTMENTS.get(appointment_key)
     csv_row = _find_csv_appointment(appointment_key)
@@ -341,12 +344,25 @@ def cancel_appointment(appointment_id: str) -> dict:
         }
     if not existing:
         return {"success": False, "reason": "Appointment ID not found."}
+
+    recorded_name = ""
+    if csv_row and csv_row.get("Customer"):
+        recorded_name = " ".join(csv_row["Customer"].strip().split())
+    elif existing.get("account") and existing["account"] in ACCOUNTS:
+        recorded_name = ACCOUNTS[existing["account"]]["full_name"]
+
+    if recorded_name and recorded_name.lower() != cleaned_name.lower():
+        return {
+            "success": False,
+            "reason": "The name does not match the appointment on file.",
+        }
+
     cancelled = APPOINTMENTS.pop(appointment_key, existing)
-    # Sync to Google Sheets
     csv_service.cancel_appointment_row(appointment_key)
     return {
         "success": True,
         "appointment_id": appointment_key,
+        "customer": recorded_name or cleaned_name,
         "service": cancelled["service"],
         "date": cancelled["date"],
         "time": cancelled["time"],
