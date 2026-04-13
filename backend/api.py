@@ -67,6 +67,21 @@ def _normalize_transcript_text(text: str) -> str:
     return " ".join(text.split())
 
 
+def _merge_transcript_chunks(previous: str, next_chunk: str) -> str:
+    """Merge incremental transcript chunks into one readable sentence."""
+    previous = _normalize_transcript_text(previous)
+    next_chunk = _normalize_transcript_text(next_chunk)
+    if not next_chunk:
+        return previous
+    if not previous:
+        return next_chunk
+    if next_chunk.startswith(previous):
+        return next_chunk
+    if previous.endswith(next_chunk):
+        return previous
+    return _normalize_transcript_text(f"{previous} {next_chunk}")
+
+
 def _resolve_voice(choice: str | None) -> dict:
     """Allow the frontend to pass either a voice number or name."""
     if not choice:
@@ -116,6 +131,7 @@ async def _send_model_audio(
     agent_turn_id = 0
     customer_turn_id = 0
     customer_turn_open = False
+    customer_turn_text = ""
     agent_turn_text = ""
     agent_turn_has_output_transcript = False
 
@@ -142,19 +158,21 @@ async def _send_model_audio(
                         if not customer_turn_open:
                             customer_turn_open = True
                             customer_turn_id += 1
-                        event = {
-                            "type": "transcript",
-                            "role": "customer",
-                            "text": text,
-                            "turn_id": f"customer-{customer_turn_id}",
-                            "finished": bool(
-                                server_content.input_transcription.finished
-                            ),
-                        }
-                        await _send_voice_event(websocket, event)
-                        await broadcast(event)
+                        customer_turn_text = _merge_transcript_chunks(
+                            customer_turn_text, text
+                        )
                         if server_content.input_transcription.finished:
+                            event = {
+                                "type": "transcript",
+                                "role": "customer",
+                                "text": customer_turn_text,
+                                "turn_id": f"customer-{customer_turn_id}",
+                                "finished": True,
+                            }
+                            await _send_voice_event(websocket, event)
+                            await broadcast(event)
                             customer_turn_open = False
+                            customer_turn_text = ""
 
                 output_text = ""
                 if server_content.output_transcription:
@@ -162,21 +180,25 @@ async def _send_model_audio(
                         server_content.output_transcription.text or ""
                     )
                     if output_text:
-                        turn_id = ensure_agent_turn_started()
+                        ensure_agent_turn_started()
                         agent_turn_has_output_transcript = True
+                        agent_turn_text = _merge_transcript_chunks(
+                            agent_turn_text, output_text
+                        )
+
+                if server_content.model_turn:
+                    if customer_turn_open and customer_turn_text:
                         event = {
                             "type": "transcript",
-                            "role": "agent",
-                            "text": output_text,
-                            "turn_id": turn_id,
-                            "finished": bool(
-                                server_content.output_transcription.finished
-                            ),
+                            "role": "customer",
+                            "text": customer_turn_text,
+                            "turn_id": f"customer-{customer_turn_id}",
+                            "finished": True,
                         }
                         await _send_voice_event(websocket, event)
                         await broadcast(event)
-
-                if server_content.model_turn:
+                        customer_turn_open = False
+                        customer_turn_text = ""
                     if not agent_speaking:
                         ensure_agent_turn_started()
                         await _send_voice_event(
@@ -188,24 +210,26 @@ async def _send_model_audio(
                         if getattr(part, "thought", False):
                             continue
                         if part.text and not output_text:
-                            turn_id = ensure_agent_turn_started()
-                            agent_turn_text = _normalize_transcript_text(
-                                f"{agent_turn_text} {part.text}"
+                            agent_turn_text = _merge_transcript_chunks(
+                                agent_turn_text, part.text
                             )
-                            event = {
-                                "type": "transcript",
-                                "role": "agent",
-                                "text": agent_turn_text,
-                                "turn_id": turn_id,
-                                "finished": False,
-                            }
-                            await _send_voice_event(websocket, event)
-                            await broadcast(event)
                         if part.inline_data and part.inline_data.data:
                             await websocket.send_bytes(part.inline_data.data)
 
                 if server_content.turn_complete:
-                    if agent_speaking and agent_turn_text and not agent_turn_has_output_transcript:
+                    if customer_turn_open and customer_turn_text:
+                        event = {
+                            "type": "transcript",
+                            "role": "customer",
+                            "text": customer_turn_text,
+                            "turn_id": f"customer-{customer_turn_id}",
+                            "finished": True,
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
+                        customer_turn_open = False
+                        customer_turn_text = ""
+                    if agent_speaking and agent_turn_text:
                         turn_id = f"agent-{agent_turn_id}"
                         event = {
                             "type": "transcript",
@@ -225,7 +249,19 @@ async def _send_model_audio(
                     await broadcast({"type": "status", "value": "listening"})
 
                 if server_content.waiting_for_input and agent_speaking:
-                    if agent_turn_text and not agent_turn_has_output_transcript:
+                    if customer_turn_open and customer_turn_text:
+                        event = {
+                            "type": "transcript",
+                            "role": "customer",
+                            "text": customer_turn_text,
+                            "turn_id": f"customer-{customer_turn_id}",
+                            "finished": True,
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
+                        customer_turn_open = False
+                        customer_turn_text = ""
+                    if agent_turn_text:
                         turn_id = f"agent-{agent_turn_id}"
                         event = {
                             "type": "transcript",
