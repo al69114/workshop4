@@ -737,7 +737,7 @@ export default function DashboardPage() {
           <MetricCard
             eyebrow="Appointments"
             value={`${appointments.length}`}
-            detail="Rows currently loaded from the shared CSV calendar."
+            detail="Appointments currently loaded in the dashboard."
           />
         </div>
       </section>
@@ -794,7 +794,7 @@ export default function DashboardPage() {
             <div>
               <p className="text-sm font-semibold text-stone-50">Appointment Ledger</p>
               <p className="mt-1 text-sm text-slate-400">
-                Every booking change is read from the shared CSV backend.
+                Every booking change updates this appointment list.
               </p>
             </div>
             <button
