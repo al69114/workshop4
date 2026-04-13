@@ -9,7 +9,12 @@ import {
 } from "@/lib/backend";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const TECHNICIANS = ["Carlos", "Maria", "Jake", "Sophie"];
+const TECHNICIANS = [
+  "Ryan Majd",
+  "Juvis Mbeng",
+  "Yash Verma",
+  "Shishir Lohar",
+];
 
 function parseAppointmentDate(value: string) {
   return new Date(`${value}T12:00:00`);

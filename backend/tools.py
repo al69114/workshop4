@@ -27,17 +27,17 @@ ACCOUNTS = {
 }
 
 APPOINTMENTS = {
-    "APT-4001": {"account": "ACC-1001", "date": "2026-04-18", "time": "9:00 AM",  "service": "AC Tune-Up",            "tech": "Carlos"},
-    "APT-4002": {"account": "ACC-1001", "date": "2026-04-25", "time": "2:00 PM",  "service": "Filter Replacement",    "tech": "Maria"},
-    "APT-4003": {"account": "ACC-1002", "date": "2026-04-19", "time": "11:00 AM", "service": "Heating System Repair", "tech": "Jake"},
-    "APT-4004": {"account": "ACC-1003", "date": "2026-04-22", "time": "10:00 AM", "service": "New Unit Installation", "tech": "Sophie"},
+    "APT-4001": {"account": "ACC-1001", "date": "2026-04-18", "time": "9:00 AM",  "service": "AC Tune-Up",            "tech": "Ryan Majd"},
+    "APT-4002": {"account": "ACC-1001", "date": "2026-04-25", "time": "2:00 PM",  "service": "Filter Replacement",    "tech": "Juvis Mbeng"},
+    "APT-4003": {"account": "ACC-1002", "date": "2026-04-19", "time": "11:00 AM", "service": "Heating System Repair", "tech": "Yash Verma"},
+    "APT-4004": {"account": "ACC-1003", "date": "2026-04-22", "time": "10:00 AM", "service": "New Unit Installation", "tech": "Shishir Lohar"},
 }
 
 ORDERS = {
-    "ORD-8001": {"account": "ACC-1001", "status": "In Progress",  "service": "AC Compressor Replacement", "tech": "Carlos",  "eta": "2026-04-14"},
-    "ORD-8002": {"account": "ACC-1002", "status": "Parts Ordered","service": "Heat Exchanger Repair",     "tech": "Jake",    "eta": "2026-04-17"},
-    "ORD-8003": {"account": "ACC-1003", "status": "Completed",    "service": "Duct Sealing",               "tech": "Sophie",  "completed": "2026-04-10"},
-    "ORD-8004": {"account": "ACC-1004", "status": "Scheduled",    "service": "Annual Maintenance",         "tech": "Maria",   "eta": "2026-04-15"},
+    "ORD-8001": {"account": "ACC-1001", "status": "In Progress",  "service": "AC Compressor Replacement", "tech": "Ryan Majd",     "eta": "2026-04-14"},
+    "ORD-8002": {"account": "ACC-1002", "status": "Parts Ordered","service": "Heat Exchanger Repair",     "tech": "Yash Verma",    "eta": "2026-04-17"},
+    "ORD-8003": {"account": "ACC-1003", "status": "Completed",    "service": "Duct Sealing",              "tech": "Shishir Lohar", "completed": "2026-04-10"},
+    "ORD-8004": {"account": "ACC-1004", "status": "Scheduled",    "service": "Annual Maintenance",        "tech": "Juvis Mbeng",   "eta": "2026-04-15"},
 }
 
 AVAILABLE_SLOTS = [
@@ -47,9 +47,45 @@ AVAILABLE_SLOTS = [
     {"date": "2026-04-17", "times": ["9:00 AM", "11:00 AM"]},
     {"date": "2026-04-21", "times": ["10:00 AM", "2:00 PM", "4:00 PM"]},
     {"date": "2026-04-22", "times": ["9:00 AM", "1:00 PM"]},
+    {"date": "2026-04-26", "times": ["9:00 AM", "11:00 AM", "2:00 PM"]},
+    {"date": "2026-04-27", "times": ["8:30 AM", "1:00 PM", "3:30 PM"]},
+    {"date": "2026-04-28", "times": ["9:00 AM", "12:00 PM", "4:00 PM"]},
+    {"date": "2026-04-29", "times": ["10:00 AM", "1:30 PM", "3:00 PM"]},
+    {"date": "2026-04-30", "times": ["8:00 AM", "11:00 AM", "2:30 PM"]},
+    {"date": "2026-05-01", "times": ["9:30 AM", "12:30 PM", "3:30 PM"]},
+    {"date": "2026-05-02", "times": ["10:00 AM", "1:00 PM"]},
+    {"date": "2026-05-03", "times": ["9:00 AM", "11:30 AM", "2:00 PM"]},
+    {"date": "2026-05-04", "times": ["8:30 AM", "12:00 PM", "4:00 PM"]},
+    {"date": "2026-05-05", "times": ["9:00 AM", "1:00 PM", "3:00 PM"]},
+    {"date": "2026-05-06", "times": ["10:00 AM", "12:30 PM", "2:30 PM"]},
+    {"date": "2026-05-07", "times": ["8:00 AM", "11:00 AM", "1:30 PM"]},
+    {"date": "2026-05-08", "times": ["9:30 AM", "12:00 PM", "3:00 PM"]},
+    {"date": "2026-05-09", "times": ["10:00 AM", "1:00 PM"]},
 ]
 
-TECHNICIANS = ["Carlos", "Maria", "Jake", "Sophie"]
+TECHNICIANS = ["Ryan Majd", "Juvis Mbeng", "Yash Verma", "Shishir Lohar"]
+TECHNICIAN_FEEDBACK = {
+    "ryan majd": {
+        "technician": "Ryan Majd",
+        "rating": 9.0,
+        "summary": "Brilliant critical thinker with a reputation for solving tough HVAC problems quickly.",
+    },
+    "juvis mbeng": {
+        "technician": "Juvis Mbeng",
+        "rating": 5.0,
+        "summary": "He got kind of got drunk on the job and had 15 cans of red bull on the retreat and can solve issues at home",
+    },
+    "yash verma": {
+        "technician": "Yash Verma",
+        "rating": 7.0,
+        "summary": "He drank a gallon of milk puked all over the AC and is new to the job and hacked the hvac to hack into kronos",
+    },
+    "shishir lohar": {
+        "technician": "Shishir Lohar",
+        "rating": 2.5,
+        "summary": "Got drunk on the job and exploded krishna's hvac and is the goated little bro and is below average at installing new units but not great at repairs",
+    },
+}
 
 
 def _format_spoken_date(value: str) -> str:
@@ -99,6 +135,13 @@ def _available_technicians(date: str, time: str) -> list[str]:
         if row.get("Date") == date and row.get("Time") == time
     }
     return [tech for tech in TECHNICIANS if tech not in occupied]
+
+
+def _date_window(start_date: str = "", end_date: str = "") -> tuple[str, str]:
+    """Resolve a date window for availability lookups."""
+    normalized_start = start_date or AVAILABLE_SLOTS[0]["date"]
+    normalized_end = end_date or AVAILABLE_SLOTS[-1]["date"]
+    return normalized_start, normalized_end
 
 
 def _find_csv_appointment(appointment_id: str) -> dict | None:
@@ -296,14 +339,28 @@ def get_order_status(order_id: str) -> dict:
     return {"found": True, **order}
 
 
+def get_technician_feedback(technician_name: str) -> dict:
+    """Return a playful technician rating summary."""
+    normalized_name = " ".join(technician_name.strip().split()).lower()
+    feedback = TECHNICIAN_FEEDBACK.get(normalized_name)
+    if not feedback:
+        return {
+            "found": False,
+            "message": "I do not have technician feedback for that name.",
+        }
+    return {
+        "found": True,
+        **feedback,
+    }
+
+
 def get_available_slots(
     start_date: str = "",
     end_date: str = "",
     service_type: str = "",
 ) -> dict:
     """Return available appointment slots in a date range."""
-    normalized_start = start_date or AVAILABLE_SLOTS[0]["date"]
-    normalized_end = end_date or AVAILABLE_SLOTS[-1]["date"]
+    normalized_start, normalized_end = _date_window(start_date, end_date)
     slot_options = []
     unavailable_slots = []
 
@@ -345,7 +402,82 @@ def get_available_slots(
     }
 
 
-def book_appointment(customer_name: str, date: str, time: str, service_type: str) -> dict:
+def get_slot_technicians(date: str, time: str) -> dict:
+    """Return which technicians are available for one exact slot."""
+    if not _slot_is_offered(date, time):
+        return {
+            "found": False,
+            "reason": "That date and time is not on the current availability list.",
+        }
+
+    available_techs = _available_technicians(date, time)
+    if not available_techs:
+        return {
+            "found": False,
+            "reason": "No technicians are available for that date and time.",
+        }
+
+    return {
+        "found": True,
+        "date": date,
+        "time": time,
+        "available_technicians": available_techs,
+        "spoken_summary": f"For {date} at {time}, I currently have {', '.join(available_techs)} available.",
+    }
+
+
+def get_technician_slots(
+    technician_name: str,
+    start_date: str = "",
+    end_date: str = "",
+) -> dict:
+    """Return openings where a requested technician is available."""
+    cleaned_name = " ".join(technician_name.strip().split())
+    if cleaned_name not in TECHNICIANS:
+        return {
+            "found": False,
+            "reason": "That technician name was not found.",
+        }
+
+    normalized_start, normalized_end = _date_window(start_date, end_date)
+    matches = []
+    for slot in AVAILABLE_SLOTS:
+        date = slot["date"]
+        if not _date_in_range(date, normalized_start, normalized_end):
+            continue
+        for time in slot["times"]:
+            if cleaned_name in _available_technicians(date, time):
+                matches.append(
+                    {
+                        "date": date,
+                        "time": time,
+                        "technician": cleaned_name,
+                    }
+                )
+
+    if not matches:
+        return {
+            "found": False,
+            "technician": cleaned_name,
+            "reason": "That technician has no open slots in the current date range.",
+        }
+
+    spoken_lines = [_spoken_slot_line(slot) for slot in matches[:3]]
+    return {
+        "found": True,
+        "technician": cleaned_name,
+        "available_slots": matches,
+        "spoken_summary": ". ".join(spoken_lines) + ".",
+    }
+
+
+def book_appointment(
+    customer_name: str,
+    date: str,
+    time: str,
+    service_type: str,
+    technician_name: str = "",
+) -> dict:
     """Book a new service appointment for a customer."""
     cleaned_name = " ".join(customer_name.strip().split())
     if not cleaned_name:
@@ -363,9 +495,29 @@ def book_appointment(customer_name: str, date: str, time: str, service_type: str
             "reason": "That time is no longer available.",
             "repeat_prompt": "Please choose another opening and I can repeat the available slots if needed.",
         }
+    requested_technician = " ".join(technician_name.strip().split())
+    if requested_technician:
+        if requested_technician not in TECHNICIANS:
+            return {
+                "success": False,
+                "reason": "That technician name was not found.",
+            }
+        if requested_technician not in available_techs:
+            technician_alternatives = get_technician_slots(
+                requested_technician,
+                start_date=date,
+                end_date=AVAILABLE_SLOTS[-1]["date"],
+            )
+            return {
+                "success": False,
+                "reason": "That technician is not available at the selected date and time.",
+                "available_technicians": available_techs,
+                "technician_alternatives": technician_alternatives.get("available_slots", []),
+                "repeat_prompt": "I can keep the same time with a different technician or look for another time with your preferred technician.",
+            }
     account_number, acc, created_new_account = _register_customer(cleaned_name)
     appointment_id = "APT-" + "".join(random.choices(string.digits, k=4))
-    assigned_tech = available_techs[0]
+    assigned_tech = requested_technician or available_techs[0]
     APPOINTMENTS[appointment_id] = {
         "account": account_number.upper(),
         "date": date,
@@ -518,7 +670,10 @@ _REGISTRY = {
     "get_appointments":       get_appointments,
     "reschedule_appointment": reschedule_appointment,
     "get_order_status":       get_order_status,
+    "get_technician_feedback": get_technician_feedback,
     "get_available_slots":    get_available_slots,
+    "get_slot_technicians":   get_slot_technicians,
+    "get_technician_slots":   get_technician_slots,
     "book_appointment":       book_appointment,
     "update_appointment_customer_name": update_appointment_customer_name,
     "cancel_appointment":     cancel_appointment,

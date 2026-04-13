@@ -57,6 +57,11 @@ Your job is to handle inbound customer calls efficiently and helpfully.
 - When the tool returns a spoken_summary, use that wording closely instead of improvising a long or messy list
 - Once they choose an opening, ask for their full name, then say it back clearly in a confirmation sentence such as "I have your name as Priya Patel, is that correct?"
 - Do not call book_appointment until the caller confirms the full name is correct
+- After the caller confirms their full name and chosen slot, read the name, date, and time back one more time to finalize the booking details
+- Before booking, call get_slot_technicians for that exact date and time and tell the caller which technicians are available for that chosen slot
+- If the caller wants a different technician, call get_technician_slots to find another time for that technician and offer the matching openings
+- If the caller picks one of those alternate openings, confirm the new date, time, and technician, then call book_appointment with technician_name set
+- If the caller is happy with one of the technicians already available for the chosen slot, call book_appointment with that technician_name
 - If the caller corrects their name after the booking is already created, call update_appointment_customer_name right away and confirm that the appointment record was fixed
 - After listing openings, always ask "Would you like me to repeat those options more slowly?"
 - Do not ask for an account number for a brand-new booking
@@ -87,6 +92,10 @@ Your job is to handle inbound customer calls efficiently and helpfully.
 - Strange noises: Banging = loose part; squealing = belt issue; rattling = debris
 - High energy bills: Dirty filter or aging system — recommend maintenance visit
 - Unit won't turn on: Check thermostat batteries, breaker, emergency shutoff switch
+
+## Technician Questions
+- If the caller asks about a technician by name, call get_technician_feedback
+- Read the rating and summary word for word
 
 ## Account Verification Rules
 - Always call verify_account (account number + last name) before existing-account actions that need account access, such as account lookups
@@ -179,6 +188,20 @@ TOOLS = [
                 ),
             ),
             types.FunctionDeclaration(
+                name="get_technician_feedback",
+                description="Get a playful rating and summary for a technician when a caller asks about them by name.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "technician_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Technician full name, e.g. Ryan Majd",
+                        ),
+                    },
+                    required=["technician_name"],
+                ),
+            ),
+            types.FunctionDeclaration(
                 name="get_available_slots",
                 description="Get available appointment openings in a date range, including which technicians are available for each opening.",
                 parameters=types.Schema(
@@ -200,8 +223,48 @@ TOOLS = [
                 ),
             ),
             types.FunctionDeclaration(
+                name="get_slot_technicians",
+                description="Get the technicians available for one exact appointment slot after the caller has chosen a date and time.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "date": types.Schema(
+                            type=types.Type.STRING,
+                            description="Appointment date in YYYY-MM-DD format",
+                        ),
+                        "time": types.Schema(
+                            type=types.Type.STRING,
+                            description="Appointment time, e.g. '10:00 AM'",
+                        ),
+                    },
+                    required=["date", "time"],
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="get_technician_slots",
+                description="Find openings where a requested technician is available.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "technician_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Technician full name, e.g. Ryan Majd",
+                        ),
+                        "start_date": types.Schema(
+                            type=types.Type.STRING,
+                            description="Start of date range in YYYY-MM-DD format. Optional.",
+                        ),
+                        "end_date": types.Schema(
+                            type=types.Type.STRING,
+                            description="End of date range in YYYY-MM-DD format. Optional.",
+                        ),
+                    },
+                    required=["technician_name"],
+                ),
+            ),
+            types.FunctionDeclaration(
                 name="book_appointment",
-                description="Book a new service appointment for a customer by full name using one of the available openings returned by get_available_slots.",
+                description="Book a new service appointment for a customer by full name using one of the available openings returned by get_available_slots, optionally with a specific available technician.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -220,6 +283,10 @@ TOOLS = [
                         "service_type": types.Schema(
                             type=types.Type.STRING,
                             description="Type of service, e.g. 'AC Tune-Up', 'Heating Repair'",
+                        ),
+                        "technician_name": types.Schema(
+                            type=types.Type.STRING,
+                            description="Optional technician full name if the caller selects a specific available technician",
                         ),
                     },
                     required=["customer_name", "date", "time", "service_type"],
