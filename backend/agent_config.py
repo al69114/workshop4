@@ -4,7 +4,7 @@ Shared Gemini Live configuration for the HVAC agents.
 
 from google.genai import types
 
-MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+MODEL = "gemini-3.1-flash-live-preview"
 INPUT_AUDIO_SAMPLE_RATE = 16_000
 OUTPUT_AUDIO_SAMPLE_RATE = 24_000
 OPENING_PROMPT = "[Call connected. Deliver the opening greeting and menu now.]"
@@ -28,7 +28,8 @@ Which option would you like?"
 ### Option 1 — Schedule / Emergency
 - Ask if this is an emergency or a standard appointment request
 - For emergencies: call estimate_arrival_time with urgency="emergency" and tell the customer how long until a tech arrives
-- For standard: call get_available_slots right away, read the available openings aloud with the technicians available for each opening, then ask which opening they want
+- For standard: call get_available_slots right away, then read only the first 2 or 3 best openings aloud in a short format: day, time, and available technician names
+- Keep availability responses brief and easy to hear, for example: "I have Tuesday at 10 AM with Maria or Jake, Wednesday at 1 PM with Sam, and Thursday at 9 AM with Maria. Which one works for you?"
 - Once they choose an opening, ask for their full name and call book_appointment with that name
 - After listing openings, always ask "Would you like me to repeat those options more slowly?"
 - Do not ask for an account number for a brand-new booking
@@ -236,27 +237,26 @@ APPOINTMENT_TOOLS = {
 
 def build_live_config(voice_name: str, voice_style: str) -> types.LiveConnectConfig:
     """Create a consistent Gemini Live config for both terminal and browser sessions."""
-    return types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
+    config_kwargs = {
+        "response_modalities": ["AUDIO"],
+        "speech_config": types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
                     voice_name=voice_name
                 )
             )
         ),
-        system_instruction=types.Content(
+        "system_instruction": types.Content(
             parts=[
                 types.Part(
                     text=f"{SYSTEM_PROMPT}\n\n## Speaking Style\n{voice_style}"
                 )
             ]
         ),
-        tools=TOOLS,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
-        realtime_input_config=types.RealtimeInputConfig(
+        "tools": TOOLS,
+        "input_audio_transcription": types.AudioTranscriptionConfig(),
+        "output_audio_transcription": types.AudioTranscriptionConfig(),
+        "realtime_input_config": types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(
                 disabled=False,
                 start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
@@ -266,4 +266,13 @@ def build_live_config(voice_name: str, voice_style: str) -> types.LiveConnectCon
             ),
             activity_handling=types.ActivityHandling.NO_INTERRUPTION,
         ),
+    }
+
+    # The 2.5 native-audio model family documents thinking support explicitly.
+    # Avoid sending this field to newer Live models unless they advertise it.
+    if "native-audio" in MODEL:
+        config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
+    return types.LiveConnectConfig(
+        **config_kwargs,
     )

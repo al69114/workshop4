@@ -40,6 +40,41 @@ function normalizeTranscriptText(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function compactTranscriptText(text: string) {
+  return normalizeTranscriptText(text).replace(/\s+/g, "");
+}
+
+function mergeTranscriptUpdate(currentText: string, nextText: string) {
+  const normalizedCurrent = normalizeTranscriptText(currentText);
+  const normalizedNext = normalizeTranscriptText(nextText);
+
+  if (!normalizedCurrent) {
+    return normalizedNext;
+  }
+  if (!normalizedNext) {
+    return normalizedCurrent;
+  }
+
+  const currentCompact = compactTranscriptText(normalizedCurrent);
+  const nextCompact = compactTranscriptText(normalizedNext);
+
+  if (currentCompact === nextCompact) {
+    return normalizedNext.length >= normalizedCurrent.length
+      ? normalizedNext
+      : normalizedCurrent;
+  }
+  if (nextCompact.startsWith(currentCompact)) {
+    return normalizedNext;
+  }
+  if (currentCompact.startsWith(nextCompact)) {
+    return normalizedCurrent;
+  }
+
+  return nextCompact.length > currentCompact.length
+    ? normalizedNext
+    : normalizedCurrent;
+}
+
 function shouldRenderTranscript(text: string, finished: boolean) {
   if (!text) {
     return false;
@@ -174,7 +209,10 @@ function MetricCard({
 }
 
 function MessageBubble({ message }: { message: Message }) {
-  if (message.role === "tool") {
+  const isTool = message.role === "tool";
+  const isAgent = message.role === "agent";
+
+  if (isTool) {
     return (
       <div className="flex justify-center">
         <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-xs text-amber-100">
@@ -183,8 +221,6 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
     );
   }
-
-  const isAgent = message.role === "agent";
 
   return (
     <div className={`flex flex-col gap-1 ${isAgent ? "items-end" : "items-start"}`}>
@@ -394,23 +430,30 @@ export default function DashboardPage() {
               return current;
             }
 
-            const last = current.at(-1);
-            if (
-              last &&
-              last.role === event.role &&
-              last.role !== "tool" &&
-              last.turnId &&
-              event.turn_id &&
-              last.turnId === event.turn_id
-            ) {
-              const updated = {
-                ...last,
-                text: nextText,
-                final: isFinal,
-              };
-              return [...current.slice(0, -1), updated];
+            if (event.turn_id) {
+              const existingIndex = current.findIndex(
+                (message) =>
+                  message.role === event.role &&
+                  message.role !== "tool" &&
+                  message.turnId === event.turn_id,
+              );
+
+              if (existingIndex >= 0) {
+                const existing = current[existingIndex];
+                const updated = {
+                  ...existing,
+                  text: mergeTranscriptUpdate(existing.text, nextText),
+                  final: Boolean(existing.final) || isFinal,
+                };
+                return [
+                  ...current.slice(0, existingIndex),
+                  updated,
+                  ...current.slice(existingIndex + 1),
+                ];
+              }
             }
 
+            const last = current.at(-1);
             if (
               last &&
               last.role === event.role &&
@@ -732,7 +775,7 @@ export default function DashboardPage() {
             ) : (
               messages.map((message, index) => (
                 <MessageBubble
-                  key={`${message.time}-${index}`}
+                  key={`${message.turnId ?? message.time}-${index}`}
                   message={message}
                 />
               ))

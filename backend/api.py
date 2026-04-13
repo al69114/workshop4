@@ -64,7 +64,23 @@ async def _send_voice_event(websocket: WebSocket, event: dict) -> None:
 
 def _normalize_transcript_text(text: str) -> str:
     """Collapse repeated whitespace in transcript text."""
-    return " ".join(text.split())
+    return " ".join(text.split()).replace(" ,", ",").replace(" .", ".")
+
+
+def _compact_transcript_text(text: str) -> str:
+    """Remove whitespace so partial cumulative transcript chunks can be compared."""
+    return "".join(text.split())
+
+
+def _suffix_after_compact_prefix(text: str, prefix_length: int) -> str:
+    """Return the raw suffix after consuming prefix_length non-whitespace chars."""
+    consumed = 0
+    index = 0
+    while index < len(text) and consumed < prefix_length:
+        if not text[index].isspace():
+            consumed += 1
+        index += 1
+    return text[index:]
 
 
 def _merge_transcript_chunks(previous: str, next_chunk: str) -> str:
@@ -75,11 +91,54 @@ def _merge_transcript_chunks(previous: str, next_chunk: str) -> str:
         return previous
     if not previous:
         return next_chunk
-    if next_chunk.startswith(previous):
-        return next_chunk
-    if previous.endswith(next_chunk):
+
+    previous_compact = _compact_transcript_text(previous)
+    next_compact = _compact_transcript_text(next_chunk)
+
+    if not next_compact:
         return previous
-    return _normalize_transcript_text(f"{previous} {next_chunk}")
+    if not previous_compact:
+        return next_chunk
+    if next_compact == previous_compact:
+        return previous if len(previous) >= len(next_chunk) else next_chunk
+    if next_compact in previous_compact:
+        return previous
+    if next_compact.startswith(previous_compact):
+        suffix = _normalize_transcript_text(
+            _suffix_after_compact_prefix(next_chunk, len(previous_compact))
+        )
+        if not suffix:
+            return previous
+        separator = (
+            " "
+            if previous[-1].isalnum() and suffix[0].isalnum()
+            else ""
+        )
+        return _normalize_transcript_text(f"{previous}{separator}{suffix}")
+    if previous_compact in next_compact:
+        return previous
+
+    max_overlap = min(len(previous_compact), len(next_compact))
+    for overlap in range(max_overlap, 0, -1):
+        if previous_compact.endswith(next_compact[:overlap]):
+            suffix = _normalize_transcript_text(
+                _suffix_after_compact_prefix(next_chunk, overlap)
+            )
+            if not suffix:
+                return previous
+            separator = (
+                " "
+                if previous[-1].isalnum() and suffix[0].isalnum()
+                else ""
+            )
+            return _normalize_transcript_text(f"{previous}{separator}{suffix}")
+
+    separator = (
+        " "
+        if previous[-1].isalnum() and next_chunk[0].isalnum()
+        else ""
+    )
+    return _normalize_transcript_text(f"{previous}{separator}{next_chunk}")
 
 
 def _resolve_voice(choice: str | None) -> dict:
@@ -161,16 +220,18 @@ async def _send_model_audio(
                         customer_turn_text = _merge_transcript_chunks(
                             customer_turn_text, text
                         )
+                        event = {
+                            "type": "transcript",
+                            "role": "customer",
+                            "text": customer_turn_text,
+                            "turn_id": f"customer-{customer_turn_id}",
+                            "finished": bool(
+                                server_content.input_transcription.finished
+                            ),
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
                         if server_content.input_transcription.finished:
-                            event = {
-                                "type": "transcript",
-                                "role": "customer",
-                                "text": customer_turn_text,
-                                "turn_id": f"customer-{customer_turn_id}",
-                                "finished": True,
-                            }
-                            await _send_voice_event(websocket, event)
-                            await broadcast(event)
                             customer_turn_open = False
                             customer_turn_text = ""
 
@@ -185,6 +246,17 @@ async def _send_model_audio(
                         agent_turn_text = _merge_transcript_chunks(
                             agent_turn_text, output_text
                         )
+                        event = {
+                            "type": "transcript",
+                            "role": "agent",
+                            "text": agent_turn_text,
+                            "turn_id": f"agent-{agent_turn_id}",
+                            "finished": bool(
+                                server_content.output_transcription.finished
+                            ),
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
 
                 if server_content.model_turn:
                     if customer_turn_open and customer_turn_text:
@@ -213,6 +285,15 @@ async def _send_model_audio(
                             agent_turn_text = _merge_transcript_chunks(
                                 agent_turn_text, part.text
                             )
+                            event = {
+                                "type": "transcript",
+                                "role": "agent",
+                                "text": agent_turn_text,
+                                "turn_id": f"agent-{agent_turn_id}",
+                                "finished": False,
+                            }
+                            await _send_voice_event(websocket, event)
+                            await broadcast(event)
                         if part.inline_data and part.inline_data.data:
                             await websocket.send_bytes(part.inline_data.data)
 
@@ -282,12 +363,28 @@ async def _send_model_audio(
 
             if message.tool_call:
                 responses = []
+                appointment_events: list[dict] = []
                 for func_call in message.tool_call.function_calls:
                     args = dict(func_call.args)
                     event = {"type": "tool_call", "name": func_call.name, "args": args}
                     await _send_voice_event(websocket, event)
                     await broadcast(event)
                     result = tools.dispatch(func_call.name, args)
+                    if func_call.name in APPOINTMENT_TOOLS and result.get("success"):
+                        appointment_events.append(
+                            {
+                                "type": "appointments_updated",
+                                "action": func_call.name,
+                                "appointment": {
+                                    "appointment_id": result.get("appointment_id"),
+                                    "date": result.get("date"),
+                                    "time": result.get("time"),
+                                    "customer": result.get("customer"),
+                                    "service": result.get("service"),
+                                    "technician": result.get("technician"),
+                                },
+                            }
+                        )
                     responses.append(
                         types.FunctionResponse(
                             name=func_call.name,
@@ -300,7 +397,12 @@ async def _send_model_audio(
                     func_call.name in APPOINTMENT_TOOLS
                     for func_call in message.tool_call.function_calls
                 ):
-                    await broadcast({"type": "appointments_updated"})
+                    if appointment_events:
+                        for appointment_event in appointment_events:
+                            await _send_voice_event(websocket, appointment_event)
+                            await broadcast(appointment_event)
+                    else:
+                        await broadcast({"type": "appointments_updated"})
 
                 await session.send_tool_response(function_responses=responses)
 
@@ -350,12 +452,7 @@ async def voice_endpoint(websocket: WebSocket) -> None:
                 websocket, {"type": "agent_state", "value": "speaking"}
             )
             await broadcast({"type": "status", "value": "speaking"})
-            await session.send_client_content(
-                turns=types.Content(
-                    role="user",
-                    parts=[types.Part(text=OPENING_PROMPT)],
-                )
-            )
+            await session.send_realtime_input(text=OPENING_PROMPT)
 
             browser_task = asyncio.create_task(
                 _receive_browser_audio(websocket, session)

@@ -96,12 +96,7 @@ async def run_agent(voice: dict) -> None:
     try:
         async with client.aio.live.connect(model=MODEL, config=config) as session:
             await broadcast({"type": "status", "value": "listening"})
-            await session.send_client_content(
-                turns=types.Content(
-                    role="user",
-                    parts=[types.Part(text=OPENING_PROMPT)],
-                )
-            )
+            await session.send_realtime_input(text=OPENING_PROMPT)
 
             async def stream_microphone() -> None:
                 while True:

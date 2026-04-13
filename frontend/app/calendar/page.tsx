@@ -77,9 +77,21 @@ export default function CalendarPage() {
     socket.onopen = () => setConnected(true);
     socket.onclose = () => setConnected(false);
     socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data as string) as { type?: string };
+      const payload = JSON.parse(event.data as string) as {
+        type?: string;
+        action?: string;
+        appointment?: {
+          appointment_id?: string;
+          date?: string;
+        };
+      };
       if (payload.type === "appointments_updated") {
         void loadAppointments();
+        if (payload.action === "book_appointment" && payload.appointment?.date) {
+          const bookedDate = parseAppointmentDate(payload.appointment.date);
+          setSelectedDate(payload.appointment.date);
+          setVisibleMonth(monthStart(bookedDate));
+        }
         setHighlightRefresh(true);
         window.setTimeout(() => setHighlightRefresh(false), 1500);
       }
