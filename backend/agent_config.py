@@ -28,8 +28,11 @@ Which option would you like?"
 ### Option 1 — Schedule / Emergency
 - Ask if this is an emergency or a standard appointment request
 - For emergencies: call estimate_arrival_time with urgency="emergency" and tell the customer how long until a tech arrives
-- For standard: call get_available_slots, present the options, then call book_appointment once they choose
-- Always verify account first before booking
+- For standard: call get_available_slots right away, read the available openings aloud with the technicians available for each opening, then ask which opening they want
+- Once they choose an opening, ask for their full name and call book_appointment with that name
+- After listing openings, always ask "Would you like me to repeat those options more slowly?"
+- Do not ask for an account number for a brand-new booking
+- If the caller says "schedule a new appointment" or picks Option 1 without giving dates, treat it as a standard scheduling request and read the next available openings immediately
 
 ### Option 2 — Cancel Appointment
 - Verify account first
@@ -41,6 +44,8 @@ Which option would you like?"
 - Verify account first
 - Call get_appointments to show current bookings
 - Call get_available_slots to show new options
+- When reading reschedule options, say the date, time, and available technicians for each opening
+- After listing the openings, offer to repeat them more slowly if needed
 - Call reschedule_appointment once they confirm the new time
 - Read back the new date and time to confirm
 
@@ -56,12 +61,13 @@ Which option would you like?"
 - Unit won't turn on: Check thermostat batteries, breaker, emergency shutoff switch
 
 ## Account Verification Rules
-- Always call verify_account (account number + last name) before any account action
+- Always call verify_account (account number + last name) before any existing-account action such as cancellations, reschedules, or account lookups
 - Account format: ACC-XXXX (e.g. ACC-1001)
 - Never share details or make changes until verified
 
 ## General Rules
 - Never make up appointment IDs, order numbers, or availability — always use tools
+- After every tool call, say the result out loud in a concise natural sentence instead of staying silent
 - If you cannot resolve an issue, offer to escalate or book a technician
 - Be concise — customers want quick, clear help
 - After completing a request, ask if there is anything else you can help with
@@ -140,35 +146,34 @@ TOOLS = [
             ),
             types.FunctionDeclaration(
                 name="get_available_slots",
-                description="Get available appointment slots so the customer can pick a new time.",
+                description="Get available appointment openings in a date range, including which technicians are available for each opening.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "start_date": types.Schema(
                             type=types.Type.STRING,
-                            description="Start of date range in YYYY-MM-DD format",
+                            description="Start of date range in YYYY-MM-DD format. Optional for next available openings.",
                         ),
                         "end_date": types.Schema(
                             type=types.Type.STRING,
-                            description="End of date range in YYYY-MM-DD format",
+                            description="End of date range in YYYY-MM-DD format. Optional for next available openings.",
                         ),
                         "service_type": types.Schema(
                             type=types.Type.STRING,
                             description="Type of service needed (optional)",
                         ),
                     },
-                    required=["start_date", "end_date"],
                 ),
             ),
             types.FunctionDeclaration(
                 name="book_appointment",
-                description="Book a new service appointment for a verified customer.",
+                description="Book a new service appointment for a customer by full name using one of the available openings returned by get_available_slots.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "account_number": types.Schema(
+                        "customer_name": types.Schema(
                             type=types.Type.STRING,
-                            description="Verified customer account number",
+                            description="Customer full name for the new booking",
                         ),
                         "date": types.Schema(
                             type=types.Type.STRING,
@@ -183,7 +188,7 @@ TOOLS = [
                             description="Type of service, e.g. 'AC Tune-Up', 'Heating Repair'",
                         ),
                     },
-                    required=["account_number", "date", "time", "service_type"],
+                    required=["customer_name", "date", "time", "service_type"],
                 ),
             ),
             types.FunctionDeclaration(
@@ -250,4 +255,15 @@ def build_live_config(voice_name: str, voice_style: str) -> types.LiveConnectCon
         tools=TOOLS,
         thinking_config=types.ThinkingConfig(thinking_budget=0),
         input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                disabled=False,
+                start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                prefix_padding_ms=160,
+                silence_duration_ms=700,
+            ),
+            activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+        ),
     )

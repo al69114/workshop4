@@ -9,6 +9,7 @@ import {
 } from "@/lib/backend";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const TECHNICIANS = ["Carlos", "Maria", "Jake", "Sophie"];
 
 function parseAppointmentDate(value: string) {
   return new Date(`${value}T12:00:00`);
@@ -56,6 +57,7 @@ function statusCount(appointments: Appointment[], status: string) {
 export default function CalendarPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [visibleMonth, setVisibleMonth] = useState(() => monthStart(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => toIsoDate(new Date()));
   const [connected, setConnected] = useState(false);
   const [highlightRefresh, setHighlightRefresh] = useState(false);
 
@@ -93,6 +95,25 @@ export default function CalendarPage() {
     return date >= currentMonthStart && date <= currentMonthEnd;
   });
   const calendarDays = buildCalendarDays(visibleMonth);
+  const selectedDayAppointments = appointments
+    .filter((appointment) => appointment.Date === selectedDate)
+    .sort((left, right) => left.Time.localeCompare(right.Time));
+  const occupiedTechnicians = Array.from(
+    new Set(
+      selectedDayAppointments
+        .filter((appointment) => appointment.Status !== "Cancelled")
+        .map((appointment) => appointment.Technician),
+    ),
+  );
+  const knownTechnicians = Array.from(
+    new Set([
+      ...TECHNICIANS,
+      ...appointments.map((appointment) => appointment.Technician),
+    ]),
+  );
+  const availableTechnicians = knownTechnicians.filter(
+    (technician) => !occupiedTechnicians.includes(technician),
+  );
 
   return (
     <div className="space-y-6">
@@ -183,6 +204,123 @@ export default function CalendarPage() {
         </article>
       </section>
 
+      <section className="grid gap-4 xl:grid-cols-[0.72fr_1.28fr]">
+        <article className="panel rounded-[32px] p-5 sm:p-6">
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-amber-300/80">
+            Technician Coverage
+          </p>
+          <h3 className="mt-3 text-2xl font-semibold tracking-tight text-stone-50">
+            {new Date(`${selectedDate}T12:00:00`).toLocaleDateString([], {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            Occupied technicians have at least one non-cancelled visit on the
+            selected day. Available technicians are open for new work.
+          </p>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-[24px] border border-rose-300/15 bg-rose-500/8 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-rose-100">Occupied</p>
+                <span className="rounded-full bg-rose-400/15 px-2.5 py-1 text-xs text-rose-100">
+                  {occupiedTechnicians.length}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {occupiedTechnicians.length === 0 ? (
+                  <span className="text-sm text-slate-400">No technicians booked.</span>
+                ) : (
+                  occupiedTechnicians.map((technician) => (
+                    <span
+                      key={technician}
+                      className="rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1.5 text-sm text-rose-50"
+                    >
+                      {technician}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-emerald-300/15 bg-emerald-500/8 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-emerald-100">Available</p>
+                <span className="rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs text-emerald-100">
+                  {availableTechnicians.length}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {availableTechnicians.length === 0 ? (
+                  <span className="text-sm text-slate-400">Every technician is booked.</span>
+                ) : (
+                  availableTechnicians.map((technician) => (
+                    <span
+                      key={technician}
+                      className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-sm text-emerald-50"
+                    >
+                      {technician}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-[24px] border border-white/8 bg-black/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-stone-50">Selected day appointments</p>
+              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300">
+                {selectedDayAppointments.length}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {selectedDayAppointments.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  No appointments are seeded for this day yet.
+                </p>
+              ) : (
+                selectedDayAppointments.map((appointment) => {
+                  const statusClass =
+                    appointmentStatusClasses[appointment.Status] ??
+                    "bg-white/5 text-slate-200 ring-1 ring-white/10";
+
+                  return (
+                    <div
+                      key={appointment["Appointment ID"]}
+                      className="rounded-[18px] border border-white/8 bg-white/5 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-stone-100">
+                            {appointment.Time} · {appointment.Customer}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-400">
+                            {appointment.Service}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-1 text-[0.68rem] font-medium ${statusClass}`}
+                        >
+                          {appointment.Status}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-500">
+                        {appointment.Technician} · {appointment["Appointment ID"]}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </article>
+
+      </section>
+
       <section className="panel rounded-[32px] p-4 sm:p-5">
         <div className="grid grid-cols-7 gap-2 pb-3">
           {WEEKDAYS.map((weekday) => (
@@ -206,11 +344,16 @@ export default function CalendarPage() {
             return (
               <article
                 key={isoDate}
+                onClick={() => setSelectedDate(isoDate)}
                 className={`min-h-[180px] rounded-[24px] border p-3 transition ${
                   inMonth
                     ? "border-white/10 bg-slate-950/55"
                     : "border-white/6 bg-black/10 text-slate-500"
-                } ${highlightRefresh ? "ring-1 ring-amber-300/20" : ""}`}
+                } ${highlightRefresh ? "ring-1 ring-amber-300/20" : ""} ${
+                  selectedDate === isoDate
+                    ? "ring-2 ring-amber-300/60"
+                    : "hover:border-amber-300/30"
+                } cursor-pointer`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>

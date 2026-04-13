@@ -48,6 +48,81 @@ AVAILABLE_SLOTS = [
     {"date": "2026-04-22", "times": ["9:00 AM", "1:00 PM"]},
 ]
 
+TECHNICIANS = ["Carlos", "Maria", "Jake", "Sophie"]
+
+
+def _date_in_range(value: str, start_date: str, end_date: str) -> bool:
+    return start_date <= value <= end_date
+
+
+def _scheduled_rows() -> list[dict]:
+    return [
+        row
+        for row in csv_service.list_appointments()
+        if row.get("Status") != "Cancelled"
+    ]
+
+
+def _slot_is_offered(date: str, time: str) -> bool:
+    return any(
+        slot["date"] == date and time in slot["times"]
+        for slot in AVAILABLE_SLOTS
+    )
+
+
+def _available_technicians(date: str, time: str) -> list[str]:
+    occupied = {
+        row["Technician"]
+        for row in _scheduled_rows()
+        if row.get("Date") == date and row.get("Time") == time
+    }
+    return [tech for tech in TECHNICIANS if tech not in occupied]
+
+
+def _find_csv_appointment(appointment_id: str) -> dict | None:
+    normalized_id = appointment_id.upper()
+    for row in csv_service.list_appointments():
+        if row.get("Appointment ID") == normalized_id:
+            return row
+    return None
+
+
+def _find_account_by_name(customer_name: str) -> tuple[str, dict] | None:
+    normalized_name = customer_name.strip().lower()
+    for account_number, account in ACCOUNTS.items():
+        if account["full_name"].strip().lower() == normalized_name:
+            return account_number, account
+    return None
+
+
+def _next_account_number() -> str:
+    numeric_values = [
+        int(account_number.split("-", 1)[1])
+        for account_number in ACCOUNTS
+        if account_number.startswith("ACC-") and account_number.split("-", 1)[1].isdigit()
+    ]
+    next_number = max(numeric_values, default=1000) + 1
+    return f"ACC-{next_number}"
+
+
+def _register_customer(customer_name: str) -> tuple[str, dict, bool]:
+    existing = _find_account_by_name(customer_name)
+    if existing:
+        account_number, account = existing
+        return account_number, account, False
+
+    cleaned_name = " ".join(customer_name.strip().split())
+    last_name = cleaned_name.split()[-1] if cleaned_name else "Customer"
+    account_number = _next_account_number()
+    account = {
+        "last_name": last_name,
+        "full_name": cleaned_name,
+        "address": "Address not yet collected",
+        "phone": "Phone not yet collected",
+    }
+    ACCOUNTS[account_number] = account
+    return account_number, account, True
+
 # ── Tool functions ─────────────────────────────────────────────────────────────
 
 def verify_account(account_number: str, last_name: str) -> dict:
@@ -68,9 +143,17 @@ def verify_account(account_number: str, last_name: str) -> dict:
 def get_appointments(account_number: str) -> dict:
     """Get upcoming service appointments for a customer account."""
     appts = [
-        {"id": appt_id, **appt}
-        for appt_id, appt in APPOINTMENTS.items()
-        if appt["account"] == account_number.upper()
+        {
+            "id": row["Appointment ID"],
+            "account": row["Account"],
+            "date": row["Date"],
+            "time": row["Time"],
+            "service": row["Service"],
+            "tech": row["Technician"],
+            "status": row["Status"],
+        }
+        for row in csv_service.list_appointments()
+        if row["Account"] == account_number.upper() and row["Status"] != "Cancelled"
     ]
     if not appts:
         return {"found": False, "message": "No upcoming appointments found for this account."}
@@ -79,14 +162,44 @@ def get_appointments(account_number: str) -> dict:
 
 def reschedule_appointment(appointment_id: str, new_date: str, new_time: str) -> dict:
     """Reschedule an existing appointment to a new date and time."""
-    existing = APPOINTMENTS.get(appointment_id.upper())
+    appointment_key = appointment_id.upper()
+    existing = APPOINTMENTS.get(appointment_key)
+    csv_row = _find_csv_appointment(appointment_key)
+    if not existing and csv_row:
+        existing = {
+            "account": csv_row["Account"],
+            "date": csv_row["Date"],
+            "time": csv_row["Time"],
+            "service": csv_row["Service"],
+            "tech": csv_row["Technician"],
+        }
+        APPOINTMENTS[appointment_key] = existing
     if not existing:
         return {"success": False, "reason": "Appointment ID not found."}
+    if not _slot_is_offered(new_date, new_time):
+        return {
+            "success": False,
+            "reason": "That opening is not on the current availability list.",
+            "repeat_prompt": "Please choose one of the listed openings, and I can repeat them if needed.",
+        }
+    available_techs = _available_technicians(new_date, new_time)
+    if not available_techs:
+        return {
+            "success": False,
+            "reason": "That time is no longer available.",
+            "repeat_prompt": "Please choose another opening and I can repeat the available slots if needed.",
+        }
     old_date, old_time = existing["date"], existing["time"]
-    APPOINTMENTS[appointment_id.upper()]["date"] = new_date
-    APPOINTMENTS[appointment_id.upper()]["time"] = new_time
+    APPOINTMENTS[appointment_key]["date"] = new_date
+    APPOINTMENTS[appointment_key]["time"] = new_time
+    APPOINTMENTS[appointment_key]["tech"] = available_techs[0]
     # Sync to Google Sheets
-    csv_service.reschedule_appointment_row(appointment_id.upper(), new_date, new_time)
+    csv_service.reschedule_appointment_row(
+        appointment_id.upper(),
+        new_date,
+        new_time,
+        available_techs[0],
+    )
     return {
         "success": True,
         "appointment_id": appointment_id.upper(),
@@ -95,7 +208,7 @@ def reschedule_appointment(appointment_id: str, new_date: str, new_time: str) ->
         "old_time": old_time,
         "new_date": new_date,
         "new_time": new_time,
-        "technician": existing["tech"],
+        "technician": available_techs[0],
     }
 
 
@@ -107,22 +220,79 @@ def get_order_status(order_id: str) -> dict:
     return {"found": True, **order}
 
 
-def get_available_slots(start_date: str, end_date: str, service_type: str = "") -> dict:
+def get_available_slots(
+    start_date: str = "",
+    end_date: str = "",
+    service_type: str = "",
+) -> dict:
     """Return available appointment slots in a date range."""
+    normalized_start = start_date or AVAILABLE_SLOTS[0]["date"]
+    normalized_end = end_date or AVAILABLE_SLOTS[-1]["date"]
+    slot_options = []
+    unavailable_slots = []
+
+    for slot in AVAILABLE_SLOTS:
+        date = slot["date"]
+        if not _date_in_range(date, normalized_start, normalized_end):
+            continue
+
+        for time in slot["times"]:
+            available_techs = _available_technicians(date, time)
+            option = {
+                "date": date,
+                "time": time,
+                "available_technicians": available_techs,
+                "remaining_capacity": len(available_techs),
+            }
+            if available_techs:
+                slot_options.append(option)
+            else:
+                unavailable_slots.append(option)
+
+    if not slot_options:
+        return {
+            "available_slots": [],
+            "unavailable_slots": unavailable_slots,
+            "message": "No appointment openings are available in that date range.",
+            "repeat_prompt": "If you want, I can check a different date range for you.",
+        }
+
+    spoken_lines = [
+        f"{slot['date']} at {slot['time']}: {', '.join(slot['available_technicians'])} available"
+        for slot in slot_options
+    ]
     return {
-        "available_slots": AVAILABLE_SLOTS,
+        "available_slots": slot_options,
+        "unavailable_slots": unavailable_slots,
+        "service_type": service_type,
+        "message": "Here are the available appointment openings with the technicians who can take them.",
+        "spoken_summary": " ; ".join(spoken_lines),
+        "repeat_prompt": "If you would like, I can repeat those openings more slowly.",
         "note": "Technician will call 30 minutes before arrival to confirm.",
     }
 
 
-def book_appointment(account_number: str, date: str, time: str, service_type: str) -> dict:
+def book_appointment(customer_name: str, date: str, time: str, service_type: str) -> dict:
     """Book a new service appointment for a customer."""
-    acc = ACCOUNTS.get(account_number.upper())
-    if not acc:
-        return {"success": False, "reason": "Account number not found."}
+    cleaned_name = " ".join(customer_name.strip().split())
+    if not cleaned_name:
+        return {"success": False, "reason": "Customer name is required."}
+    if not _slot_is_offered(date, time):
+        return {
+            "success": False,
+            "reason": "That opening is not on the current availability list.",
+            "repeat_prompt": "Please choose one of the listed openings, and I can repeat them if needed.",
+        }
+    available_techs = _available_technicians(date, time)
+    if not available_techs:
+        return {
+            "success": False,
+            "reason": "That time is no longer available.",
+            "repeat_prompt": "Please choose another opening and I can repeat the available slots if needed.",
+        }
+    account_number, acc, created_new_account = _register_customer(cleaned_name)
     appointment_id = "APT-" + "".join(random.choices(string.digits, k=4))
-    techs = ["Carlos", "Maria", "Jake", "Sophie"]
-    assigned_tech = random.choice(techs)
+    assigned_tech = available_techs[0]
     APPOINTMENTS[appointment_id] = {
         "account": account_number.upper(),
         "date": date,
@@ -149,6 +319,8 @@ def book_appointment(account_number: str, date: str, time: str, service_type: st
         "time": time,
         "service": service_type,
         "technician": assigned_tech,
+        "remaining_available_technicians": available_techs[1:],
+        "customer_registered": created_new_account,
         "sheet_sync": sheet_result,
         "note": "You will receive a confirmation and your technician will call 30 minutes before arrival.",
     }
@@ -156,15 +328,25 @@ def book_appointment(account_number: str, date: str, time: str, service_type: st
 
 def cancel_appointment(appointment_id: str) -> dict:
     """Cancel an existing service appointment."""
-    existing = APPOINTMENTS.get(appointment_id.upper())
+    appointment_key = appointment_id.upper()
+    existing = APPOINTMENTS.get(appointment_key)
+    csv_row = _find_csv_appointment(appointment_key)
+    if not existing and csv_row:
+        existing = {
+            "account": csv_row["Account"],
+            "date": csv_row["Date"],
+            "time": csv_row["Time"],
+            "service": csv_row["Service"],
+            "tech": csv_row["Technician"],
+        }
     if not existing:
         return {"success": False, "reason": "Appointment ID not found."}
-    cancelled = APPOINTMENTS.pop(appointment_id.upper())
+    cancelled = APPOINTMENTS.pop(appointment_key, existing)
     # Sync to Google Sheets
-    csv_service.cancel_appointment_row(appointment_id.upper())
+    csv_service.cancel_appointment_row(appointment_key)
     return {
         "success": True,
-        "appointment_id": appointment_id.upper(),
+        "appointment_id": appointment_key,
         "service": cancelled["service"],
         "date": cancelled["date"],
         "time": cancelled["time"],

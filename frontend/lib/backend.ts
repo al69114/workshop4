@@ -4,6 +4,8 @@ export type Message = {
   role: "agent" | "customer" | "tool";
   text: string;
   time: string;
+  final?: boolean;
+  turnId?: string;
 };
 
 export type Appointment = {
@@ -19,7 +21,13 @@ export type Appointment = {
 
 export type DashboardEvent =
   | { type: "status"; value: AgentStatus }
-  | { type: "transcript"; role: "agent" | "customer"; text: string }
+  | {
+      type: "transcript";
+      role: "agent" | "customer";
+      text: string;
+      finished?: boolean;
+      turn_id?: string;
+    }
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "appointments_updated" };
 

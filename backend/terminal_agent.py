@@ -104,19 +104,17 @@ async def run_agent(voice: dict) -> None:
             )
 
             async def stream_microphone() -> None:
-                nonlocal agent_speaking
                 while True:
                     pcm = await loop.run_in_executor(
                         None,
                         lambda: mic_stream.read(CHUNK, exception_on_overflow=False),
                     )
-                    if not agent_speaking:
-                        await session.send_realtime_input(
-                            audio=types.Blob(
-                                data=pcm,
-                                mime_type=f"audio/pcm;rate={MIC_SAMPLE_RATE}",
-                            )
+                    await session.send_realtime_input(
+                        audio=types.Blob(
+                            data=pcm,
+                            mime_type=f"audio/pcm;rate={MIC_SAMPLE_RATE}",
                         )
+                    )
 
             async def play_responses() -> None:
                 nonlocal agent_speaking

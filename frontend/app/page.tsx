@@ -21,12 +21,33 @@ type CallState = "idle" | "connecting" | "live";
 
 const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
+const OUTPUT_GAIN = 0.72;
+const MICROPHONE_CONSTRAINTS: MediaTrackConstraints = {
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
 
 function formatClock() {
   return new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function normalizeTranscriptText(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function shouldRenderTranscript(text: string, finished: boolean) {
+  if (!text) {
+    return false;
+  }
+  if (finished) {
+    return true;
+  }
+  return /[A-Za-z0-9]/.test(text);
 }
 
 function encodePcmChunk(
@@ -235,6 +256,9 @@ export default function DashboardPage() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const inputSinkRef = useRef<GainNode | null>(null);
+  const outputGainRef = useRef<GainNode | null>(null);
+  const voiceReadyRef = useRef(false);
+  const agentSpeakingRef = useRef(false);
   const playbackCursorRef = useRef(0);
 
   const loadAppointments = useCallback(async () => {
@@ -267,7 +291,15 @@ export default function DashboardPage() {
     }
 
     const chunk = payload instanceof Blob ? await payload.arrayBuffer() : payload;
+    if (chunk.byteLength < 2) {
+      return;
+    }
+
     const channelData = decodePcmChunk(chunk);
+    if (channelData.length === 0) {
+      return;
+    }
+
     const audioBuffer = outputContext.createBuffer(
       1,
       channelData.length,
@@ -278,7 +310,7 @@ export default function DashboardPage() {
 
     const source = outputContext.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(outputContext.destination);
+    source.connect(outputGainRef.current ?? outputContext.destination);
 
     const startAt = Math.max(outputContext.currentTime, playbackCursorRef.current);
     source.start(startAt);
@@ -295,6 +327,8 @@ export default function DashboardPage() {
     }) => {
       const socket = voiceSocketRef.current;
       voiceSocketRef.current = null;
+      voiceReadyRef.current = false;
+      agentSpeakingRef.current = false;
 
       if (socket) {
         socket.onopen = null;
@@ -321,6 +355,9 @@ export default function DashboardPage() {
       inputSinkRef.current?.disconnect();
       inputSinkRef.current = null;
 
+      outputGainRef.current?.disconnect();
+      outputGainRef.current = null;
+
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
 
@@ -343,30 +380,79 @@ export default function DashboardPage() {
   const handleDashboardEvent = useCallback(
     (event: DashboardEvent) => {
       if (event.type === "status") {
+        agentSpeakingRef.current = event.value === "speaking";
         setStatus(event.value);
         return;
       }
 
       if (event.type === "transcript") {
         startTransition(() => {
-          setMessages((current) => [
-            ...current,
-            { role: event.role, text: event.text, time: formatClock() },
-          ]);
+          setMessages((current) => {
+            const nextText = normalizeTranscriptText(event.text);
+            const isFinal = Boolean(event.finished);
+            if (!shouldRenderTranscript(nextText, isFinal)) {
+              return current;
+            }
+
+            const last = current.at(-1);
+            if (
+              last &&
+              last.role === event.role &&
+              last.role !== "tool" &&
+              last.turnId &&
+              event.turn_id &&
+              last.turnId === event.turn_id
+            ) {
+              const updated = {
+                ...last,
+                text: nextText,
+                final: isFinal,
+              };
+              return [...current.slice(0, -1), updated];
+            }
+
+            if (
+              last &&
+              last.role === event.role &&
+              last.text === nextText &&
+              Boolean(last.final) === isFinal &&
+              last.turnId === event.turn_id
+            ) {
+              return current;
+            }
+
+            return [
+              ...current,
+              {
+                role: event.role,
+                text: nextText,
+                time: formatClock(),
+                final: isFinal,
+                turnId: event.turn_id,
+              },
+            ];
+          });
         });
         return;
       }
 
       if (event.type === "tool_call") {
         startTransition(() => {
-          setMessages((current) => [
-            ...current,
-            {
-              role: "tool",
-              text: `${event.name}(${JSON.stringify(event.args)})`,
-              time: formatClock(),
-            },
-          ]);
+          setMessages((current) => {
+            const text = `${event.name}(${JSON.stringify(event.args)})`;
+            const last = current.at(-1);
+            if (last?.role === "tool" && last.text === text) {
+              return current;
+            }
+            return [
+              ...current,
+              {
+                role: "tool",
+                text,
+                time: formatClock(),
+              },
+            ];
+          });
         });
         return;
       }
@@ -433,9 +519,11 @@ export default function DashboardPage() {
     startTransition(() => setMessages([]));
 
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: MICROPHONE_CONSTRAINTS,
+      });
       const inputContext = new AudioContext({ sampleRate: INPUT_SAMPLE_RATE });
-      const outputContext = new AudioContext();
+      const outputContext = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
 
       await inputContext.resume();
       await outputContext.resume();
@@ -443,11 +531,19 @@ export default function DashboardPage() {
       const inputSource = inputContext.createMediaStreamSource(mediaStream);
       const processor = inputContext.createScriptProcessor(2048, 1, 1);
       const sink = inputContext.createGain();
+      const outputGain = outputContext.createGain();
       sink.gain.value = 0;
+      outputGain.gain.value = OUTPUT_GAIN;
+      outputGain.connect(outputContext.destination);
 
       processor.onaudioprocess = (event) => {
         const socket = voiceSocketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
+        if (
+          !socket ||
+          socket.readyState !== WebSocket.OPEN ||
+          !voiceReadyRef.current ||
+          agentSpeakingRef.current
+        ) {
           return;
         }
 
@@ -463,7 +559,7 @@ export default function DashboardPage() {
       voiceSocket.binaryType = "arraybuffer";
 
       voiceSocket.onopen = () => {
-        setCallState("live");
+        setCallState("connecting");
       };
 
       voiceSocket.onmessage = (event) => {
@@ -471,7 +567,26 @@ export default function DashboardPage() {
           const payload = JSON.parse(event.data) as {
             type?: string;
             message?: string;
+            value?: AgentStatus;
           };
+
+          if (payload.type === "session_ready") {
+            voiceReadyRef.current = true;
+            agentSpeakingRef.current = true;
+            setCallState("live");
+            return;
+          }
+
+          if (payload.type === "agent_state" && payload.value) {
+            agentSpeakingRef.current = payload.value === "speaking";
+            setStatus(payload.value);
+            return;
+          }
+
+          if (payload.type === "transcript" || payload.type === "tool_call") {
+            handleDashboardEvent(payload as DashboardEvent);
+            return;
+          }
 
           if (payload.type === "error") {
             setCallError(payload.message ?? "The voice session ended unexpectedly.");
@@ -487,7 +602,13 @@ export default function DashboardPage() {
         setCallError("The browser could not reach the backend voice socket.");
       };
 
-      voiceSocket.onclose = () => {
+      voiceSocket.onclose = (event) => {
+        if (event.code !== 1000 && event.code !== 1005) {
+          const reason = event.reason
+            ? `${event.code}: ${event.reason}`
+            : `Voice socket closed (${event.code}).`;
+          setCallError(reason);
+        }
         void cleanupCall({ closeSocket: false, nextState: "idle" });
       };
 
@@ -497,6 +618,7 @@ export default function DashboardPage() {
       inputSourceRef.current = inputSource;
       processorRef.current = processor;
       inputSinkRef.current = sink;
+      outputGainRef.current = outputGain;
       voiceSocketRef.current = voiceSocket;
     } catch (error) {
       const message =
@@ -545,6 +667,10 @@ export default function DashboardPage() {
               </button>
               <p className="text-sm text-slate-400">
                 Allow microphone access when the browser prompts you.
+              </p>
+              <p className="max-w-[260px] text-xs leading-5 text-slate-500">
+                If you are using Mac speakers, use headphones or lower speaker
+                volume to avoid feedback squeal during live calls.
               </p>
             </div>
           </div>

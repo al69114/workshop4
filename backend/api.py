@@ -9,10 +9,8 @@ Events broadcast to all connected clients:
 """
 
 import asyncio
-import csv
 import json
 import os
-from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -31,6 +29,7 @@ from agent_config import (
     OPENING_PROMPT,
     build_live_config,
 )
+from services import csv_service
 from voices import VOICES
 
 app = FastAPI()
@@ -56,6 +55,16 @@ async def broadcast(event: dict) -> None:
             await client.send_text(message)
         except Exception:
             _clients.remove(client)
+
+
+async def _send_voice_event(websocket: WebSocket, event: dict) -> None:
+    """Send a JSON event over the active voice socket."""
+    await websocket.send_text(json.dumps(event))
+
+
+def _normalize_transcript_text(text: str) -> str:
+    """Collapse repeated whitespace in transcript text."""
+    return " ".join(text.split())
 
 
 def _resolve_voice(choice: str | None) -> dict:
@@ -104,64 +113,160 @@ async def _send_model_audio(
 ) -> None:
     """Stream Gemini responses back to the browser and dashboard listeners."""
     agent_speaking = False
+    agent_turn_id = 0
+    customer_turn_id = 0
+    customer_turn_open = False
+    agent_turn_text = ""
+    agent_turn_has_output_transcript = False
 
-    async for message in session.receive():
-        server_content = message.server_content
+    def ensure_agent_turn_started() -> str:
+        nonlocal agent_speaking, agent_turn_id, agent_turn_text
+        nonlocal agent_turn_has_output_transcript
+        if not agent_speaking:
+            agent_speaking = True
+            agent_turn_id += 1
+            agent_turn_text = ""
+            agent_turn_has_output_transcript = False
+        return f"agent-{agent_turn_id}"
 
-        if server_content:
-            if server_content.input_transcription:
-                text = (server_content.input_transcription.text or "").strip()
-                if text:
-                    await broadcast(
-                        {"type": "transcript", "role": "customer", "text": text}
+    while True:
+        async for message in session.receive():
+            server_content = message.server_content
+
+            if server_content:
+                if server_content.input_transcription:
+                    text = _normalize_transcript_text(
+                        server_content.input_transcription.text or ""
                     )
+                    if text:
+                        if not customer_turn_open:
+                            customer_turn_open = True
+                            customer_turn_id += 1
+                        event = {
+                            "type": "transcript",
+                            "role": "customer",
+                            "text": text,
+                            "turn_id": f"customer-{customer_turn_id}",
+                            "finished": bool(
+                                server_content.input_transcription.finished
+                            ),
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
+                        if server_content.input_transcription.finished:
+                            customer_turn_open = False
 
-            if server_content.model_turn:
-                if not agent_speaking:
-                    agent_speaking = True
-                    await broadcast({"type": "status", "value": "speaking"})
+                output_text = ""
+                if server_content.output_transcription:
+                    output_text = _normalize_transcript_text(
+                        server_content.output_transcription.text or ""
+                    )
+                    if output_text:
+                        turn_id = ensure_agent_turn_started()
+                        agent_turn_has_output_transcript = True
+                        event = {
+                            "type": "transcript",
+                            "role": "agent",
+                            "text": output_text,
+                            "turn_id": turn_id,
+                            "finished": bool(
+                                server_content.output_transcription.finished
+                            ),
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
 
-                for part in server_content.model_turn.parts:
-                    if getattr(part, "thought", False):
-                        continue
-                    if part.text:
-                        await broadcast(
-                            {
+                if server_content.model_turn:
+                    if not agent_speaking:
+                        ensure_agent_turn_started()
+                        await _send_voice_event(
+                            websocket, {"type": "agent_state", "value": "speaking"}
+                        )
+                        await broadcast({"type": "status", "value": "speaking"})
+
+                    for part in server_content.model_turn.parts:
+                        if getattr(part, "thought", False):
+                            continue
+                        if part.text and not output_text:
+                            turn_id = ensure_agent_turn_started()
+                            agent_turn_text = _normalize_transcript_text(
+                                f"{agent_turn_text} {part.text}"
+                            )
+                            event = {
                                 "type": "transcript",
                                 "role": "agent",
-                                "text": part.text,
+                                "text": agent_turn_text,
+                                "turn_id": turn_id,
+                                "finished": False,
                             }
-                        )
-                    if part.inline_data and part.inline_data.data:
-                        await websocket.send_bytes(part.inline_data.data)
+                            await _send_voice_event(websocket, event)
+                            await broadcast(event)
+                        if part.inline_data and part.inline_data.data:
+                            await websocket.send_bytes(part.inline_data.data)
 
-            if server_content.turn_complete:
-                agent_speaking = False
-                await broadcast({"type": "status", "value": "listening"})
-
-        if message.tool_call:
-            responses = []
-            for func_call in message.tool_call.function_calls:
-                args = dict(func_call.args)
-                await broadcast(
-                    {"type": "tool_call", "name": func_call.name, "args": args}
-                )
-                result = tools.dispatch(func_call.name, args)
-                responses.append(
-                    types.FunctionResponse(
-                        name=func_call.name,
-                        id=func_call.id,
-                        response={"output": json.dumps(result)},
+                if server_content.turn_complete:
+                    if agent_speaking and agent_turn_text and not agent_turn_has_output_transcript:
+                        turn_id = f"agent-{agent_turn_id}"
+                        event = {
+                            "type": "transcript",
+                            "role": "agent",
+                            "text": agent_turn_text,
+                            "turn_id": turn_id,
+                            "finished": True,
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
+                    agent_speaking = False
+                    agent_turn_text = ""
+                    agent_turn_has_output_transcript = False
+                    await _send_voice_event(
+                        websocket, {"type": "agent_state", "value": "listening"}
                     )
-                )
+                    await broadcast({"type": "status", "value": "listening"})
 
-            if any(
-                func_call.name in APPOINTMENT_TOOLS
-                for func_call in message.tool_call.function_calls
-            ):
-                await broadcast({"type": "appointments_updated"})
+                if server_content.waiting_for_input and agent_speaking:
+                    if agent_turn_text and not agent_turn_has_output_transcript:
+                        turn_id = f"agent-{agent_turn_id}"
+                        event = {
+                            "type": "transcript",
+                            "role": "agent",
+                            "text": agent_turn_text,
+                            "turn_id": turn_id,
+                            "finished": True,
+                        }
+                        await _send_voice_event(websocket, event)
+                        await broadcast(event)
+                    agent_speaking = False
+                    agent_turn_text = ""
+                    agent_turn_has_output_transcript = False
+                    await _send_voice_event(
+                        websocket, {"type": "agent_state", "value": "listening"}
+                    )
+                    await broadcast({"type": "status", "value": "listening"})
 
-            await session.send_tool_response(function_responses=responses)
+            if message.tool_call:
+                responses = []
+                for func_call in message.tool_call.function_calls:
+                    args = dict(func_call.args)
+                    event = {"type": "tool_call", "name": func_call.name, "args": args}
+                    await _send_voice_event(websocket, event)
+                    await broadcast(event)
+                    result = tools.dispatch(func_call.name, args)
+                    responses.append(
+                        types.FunctionResponse(
+                            name=func_call.name,
+                            id=func_call.id,
+                            response={"output": json.dumps(result)},
+                        )
+                    )
+
+                if any(
+                    func_call.name in APPOINTMENT_TOOLS
+                    for func_call in message.tool_call.function_calls
+                ):
+                    await broadcast({"type": "appointments_updated"})
+
+                await session.send_tool_response(function_responses=responses)
 
 
 # ── WebSocket endpoint ─────────────────────────────────────────────────────────
@@ -200,13 +305,15 @@ async def voice_endpoint(websocket: WebSocket) -> None:
     client = genai.Client(api_key=api_key)
     config = build_live_config(voice["name"], voice["style"])
 
-    await websocket.send_text(
-        json.dumps({"type": "session_ready", "voice": voice["name"]})
-    )
-
     try:
         async with client.aio.live.connect(model=MODEL, config=config) as session:
-            await broadcast({"type": "status", "value": "listening"})
+            await websocket.send_text(
+                json.dumps({"type": "session_ready", "voice": voice["name"]})
+            )
+            await _send_voice_event(
+                websocket, {"type": "agent_state", "value": "speaking"}
+            )
+            await broadcast({"type": "status", "value": "speaking"})
             await session.send_client_content(
                 turns=types.Content(
                     role="user",
@@ -257,8 +364,4 @@ async def voice_endpoint(websocket: WebSocket) -> None:
 @app.get("/appointments")
 async def get_appointments() -> list[dict]:
     """Return the current appointments CSV as JSON."""
-    csv_path = Path(os.environ.get("APPOINTMENTS_CSV", "appointments.csv"))
-    if not csv_path.exists():
-        return []
-    with open(csv_path, newline="") as f:
-        return list(csv.DictReader(f))
+    return csv_service.list_appointments()
