@@ -68,7 +68,9 @@ Your job is to handle inbound customer calls efficiently and helpfully.
 
 ### Option 1 — Schedule / Emergency
 - Ask if this is an emergency or a standard appointment request
-- For emergencies: call estimate_arrival_time with urgency="emergency" and tell the customer how long until a tech arrives
+- For emergencies: call get_available_slots with urgency="emergency" first and only offer openings that are today or within the next two days
+- If emergency openings are available, read only the first 2 or 3 concise options aloud
+- If no emergency openings are available in that window, call estimate_arrival_time with urgency="emergency" and tell the customer how long until a tech arrives
 - For standard: call get_available_slots right away, then read only the first 2 or 3 best openings aloud in a short format: day and time only
 - Do not mention technician names when offering scheduling openings
 - Keep availability responses brief and easy to hear, for example: "I have Tuesday at 10 AM, Wednesday at 1 PM, and Thursday at 9 AM. Which one works for you?"
@@ -239,6 +241,10 @@ TOOLS = [
                         "service_type": types.Schema(
                             type=types.Type.STRING,
                             description="Type of service needed (optional)",
+                        ),
+                        "urgency": types.Schema(
+                            type=types.Type.STRING,
+                            description="Use 'emergency' to limit openings to today through the next two days. Otherwise use 'standard'.",
                         ),
                     },
                 ),

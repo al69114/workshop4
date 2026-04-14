@@ -14,7 +14,7 @@ Each function returns a plain dict — the agent reads it and speaks the result.
 import json
 import random
 import string
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from services import csv_service
 
 # ── Mock data ──────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ ACCOUNTS = {
 
 APPOINTMENTS = {
     "APT-4001": {"account": "ACC-1001", "date": "2026-04-18", "time": "9:00 AM",  "service": "AC Tune-Up",            "tech": "Ryan Majd"},
-    "APT-4002": {"account": "ACC-1001", "date": "2026-04-25", "time": "2:00 PM",  "service": "Filter Replacement",    "tech": "Juvis Mbeng"},
+    "APT-4002": {"account": "ACC-1001", "date": "2026-04-25", "time": "2:00 PM",  "service": "Filter Replacement",    "tech": "Lamarca Salvatore"},
     "APT-4003": {"account": "ACC-1002", "date": "2026-04-19", "time": "11:00 AM", "service": "Heating System Repair", "tech": "Yash Verma"},
     "APT-4004": {"account": "ACC-1003", "date": "2026-04-22", "time": "10:00 AM", "service": "New Unit Installation", "tech": "Shishir Lohar"},
 }
@@ -37,7 +37,7 @@ ORDERS = {
     "ORD-8001": {"account": "ACC-1001", "status": "In Progress",  "service": "AC Compressor Replacement", "tech": "Ryan Majd",     "eta": "2026-04-14"},
     "ORD-8002": {"account": "ACC-1002", "status": "Parts Ordered","service": "Heat Exchanger Repair",     "tech": "Yash Verma",    "eta": "2026-04-17"},
     "ORD-8003": {"account": "ACC-1003", "status": "Completed",    "service": "Duct Sealing",              "tech": "Shishir Lohar", "completed": "2026-04-10"},
-    "ORD-8004": {"account": "ACC-1004", "status": "Scheduled",    "service": "Annual Maintenance",        "tech": "Juvis Mbeng",   "eta": "2026-04-15"},
+    "ORD-8004": {"account": "ACC-1004", "status": "Scheduled",    "service": "Annual Maintenance",        "tech": "Lamarca Salvatore",   "eta": "2026-04-15"},
 }
 
 AVAILABLE_SLOTS = [
@@ -61,19 +61,26 @@ AVAILABLE_SLOTS = [
     {"date": "2026-05-07", "times": ["8:00 AM", "11:00 AM", "1:30 PM"]},
     {"date": "2026-05-08", "times": ["9:30 AM", "12:00 PM", "3:00 PM"]},
     {"date": "2026-05-09", "times": ["10:00 AM", "1:00 PM"]},
+    {"date": "2026-05-10", "times": ["9:00 AM", "11:30 AM", "2:30 PM"]},
+    {"date": "2026-05-11", "times": ["8:30 AM", "12:00 PM", "3:30 PM"]},
+    {"date": "2026-05-12", "times": ["9:00 AM", "1:00 PM", "4:00 PM"]},
+    {"date": "2026-05-13", "times": ["10:00 AM", "12:30 PM", "3:00 PM"]},
+    {"date": "2026-05-14", "times": ["8:00 AM", "11:00 AM", "2:00 PM"]},
+    {"date": "2026-05-15", "times": ["9:30 AM", "12:30 PM", "3:30 PM"]},
+    {"date": "2026-05-16", "times": ["10:00 AM", "1:00 PM", "4:00 PM"]},
 ]
 
-TECHNICIANS = ["Ryan Majd", "Juvis Mbeng", "Yash Verma", "Shishir Lohar"]
+TECHNICIANS = ["Ryan Majd", "Lamarca Salvatore", "Yash Verma", "Shishir Lohar"]
 TECHNICIAN_FEEDBACK = {
     "ryan majd": {
         "technician": "Ryan Majd",
         "rating": 9.0,
         "summary": "Brilliant critical thinker with a reputation for solving tough HVAC problems quickly and is about to retire.",
     },
-    "juvis mbeng": {
-        "technician": "Juvis Mbeng",
-        "rating": 5.0,
-        "summary": "High-energy technician who usually averages on the job and had 15 cans of red bull if there is no vodka and can solve issues at home. ",
+    "lamarca salvatore": {
+        "technician": "Lamarca Salvatore",
+        "rating": 3.0,
+        "summary": "High-energy technician who usually averages on the job and doesn't know systems and bullies customers ",
     },
     "yash verma": {
         "technician": "Yash Verma",
@@ -142,6 +149,30 @@ def _date_window(start_date: str = "", end_date: str = "") -> tuple[str, str]:
     normalized_start = start_date or AVAILABLE_SLOTS[0]["date"]
     normalized_end = end_date or AVAILABLE_SLOTS[-1]["date"]
     return normalized_start, normalized_end
+
+
+def _emergency_date_window(
+    start_date: str = "",
+    end_date: str = "",
+) -> tuple[str, str]:
+    """Limit emergency scheduling to today through the next two days."""
+    today = date.today()
+    earliest = max(today, datetime.strptime(AVAILABLE_SLOTS[0]["date"], "%Y-%m-%d").date())
+    latest = min(
+        today + timedelta(days=2),
+        datetime.strptime(AVAILABLE_SLOTS[-1]["date"], "%Y-%m-%d").date(),
+    )
+
+    start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else earliest
+    end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else latest
+
+    normalized_start = max(start, earliest)
+    normalized_end = min(end, latest)
+    if normalized_start > normalized_end:
+        normalized_start = earliest
+        normalized_end = latest
+
+    return normalized_start.isoformat(), normalized_end.isoformat()
 
 
 def _find_csv_appointment(appointment_id: str) -> dict | None:
@@ -392,9 +423,14 @@ def get_available_slots(
     start_date: str = "",
     end_date: str = "",
     service_type: str = "",
+    urgency: str = "standard",
 ) -> dict:
     """Return available appointment slots in a date range."""
-    normalized_start, normalized_end = _date_window(start_date, end_date)
+    normalized_urgency = urgency.strip().lower() or "standard"
+    if normalized_urgency == "emergency":
+        normalized_start, normalized_end = _emergency_date_window(start_date, end_date)
+    else:
+        normalized_start, normalized_end = _date_window(start_date, end_date)
     slot_options = []
     unavailable_slots = []
 
@@ -420,8 +456,17 @@ def get_available_slots(
         return {
             "available_slots": [],
             "unavailable_slots": unavailable_slots,
-            "message": "No appointment openings are available in that date range.",
-            "repeat_prompt": "If you want, I can check a different date range for you.",
+            "message": (
+                "No emergency openings are available today through the next two days."
+                if normalized_urgency == "emergency"
+                else "No appointment openings are available in that date range."
+            ),
+            "repeat_prompt": (
+                "If you want, I can check the next available non-emergency openings for you."
+                if normalized_urgency == "emergency"
+                else "If you want, I can check a different date range for you."
+            ),
+            "urgency": normalized_urgency,
         }
 
     spoken_lines = [_spoken_slot_line(slot) for slot in slot_options[:3]]
@@ -429,10 +474,15 @@ def get_available_slots(
         "available_slots": slot_options,
         "unavailable_slots": unavailable_slots,
         "service_type": service_type,
-        "message": "Here are the next available appointment openings.",
+        "message": (
+            "Here are the emergency openings available today through the next two days."
+            if normalized_urgency == "emergency"
+            else "Here are the next available appointment openings."
+        ),
         "spoken_summary": ". ".join(spoken_lines) + ".",
         "repeat_prompt": "If you would like, I can repeat those openings more slowly.",
         "note": "Technician will call 30 minutes before arrival to confirm.",
+        "urgency": normalized_urgency,
     }
 
 

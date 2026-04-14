@@ -11,7 +11,7 @@ import {
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TECHNICIANS = [
   "Ryan Majd",
-  "Juvis Mbeng",
+  "Lamarca Salvatore",
   "Yash Verma",
   "Shishir Lohar",
 ];
