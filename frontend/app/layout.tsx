@@ -4,10 +4,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "AirPro Service Command",
-    template: "%s | AirPro Service Command",
+    default: "AIRPRO AI AGENT",
+    template: "%s | AIRPRO AI AGENT",
   },
-  description: "Live HVAC voice-agent console and appointment calendar.",
+  description: "Live AI agent console and appointment calendar.",
 };
 
 export default function RootLayout({

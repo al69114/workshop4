@@ -16,11 +16,11 @@ export default function SiteNav() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-amber-300/80">
-            AirPro HVAC
+            AIRPRO
           </p>
           <div className="flex items-end gap-3">
             <h1 className="text-2xl font-semibold tracking-tight text-stone-50">
-              Service Command
+              AI AGENT
             </h1>
             <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[0.7rem] font-medium uppercase tracking-[0.24em] text-emerald-200">
               Live

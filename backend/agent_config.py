@@ -17,13 +17,13 @@ SUPPORTED_LANGUAGES = {
     "pt": "Portuguese",
 }
 LANGUAGE_OPENINGS = {
-    "en": "Thank you for calling AirPro HVAC Services! My name is Alex, and I'm happy to help you today. What can I help you with?",
-    "es": "Gracias por llamar a AirPro HVAC Services. Mi nombre es Alex y con gusto le ayudo hoy. ¿En qué le puedo ayudar?",
-    "fr": "Merci d'avoir appelé AirPro HVAC Services. Je m'appelle Alex et je suis heureux de vous aider aujourd'hui. Comment puis-je vous aider ?",
-    "de": "Danke, dass Sie AirPro HVAC Services angerufen haben. Mein Name ist Alex und ich helfe Ihnen heute gern. Womit kann ich Ihnen helfen?",
-    "hi": "AirPro HVAC Services को कॉल करने के लिए धन्यवाद। मेरा नाम Alex है, और मैं आज आपकी मदद करके खुश हूँ। मैं आपकी किस तरह मदद कर सकता हूँ?",
-    "it": "Grazie per aver chiamato AirPro HVAC Services. Mi chiamo Alex e sono felice di aiutarla oggi. In cosa posso aiutarla?",
-    "pt": "Obrigado por ligar para a AirPro HVAC Services. Meu nome é Alex e fico feliz em ajudar você hoje. Como posso ajudar?",
+    "en": "Thank you for calling AIRPRO AI AGENT! My name is Alex, and I'm happy to help you today. What can I help you with?",
+    "es": "Gracias por llamar a AIRPRO AI AGENT. Mi nombre es Alex y con gusto le ayudo hoy. ¿En qué le puedo ayudar?",
+    "fr": "Merci d'avoir appelé AIRPRO AI AGENT. Je m'appelle Alex et je suis heureux de vous aider aujourd'hui. Comment puis-je vous aider ?",
+    "de": "Danke, dass Sie AIRPRO AI AGENT angerufen haben. Mein Name ist Alex und ich helfe Ihnen heute gern. Womit kann ich Ihnen helfen?",
+    "hi": "AIRPRO AI AGENT को कॉल करने के लिए धन्यवाद। मेरा नाम Alex है, और मैं आज आपकी मदद करके खुश हूँ। मैं आपकी किस तरह मदद कर सकता हूँ?",
+    "it": "Grazie per aver chiamato AIRPRO AI AGENT. Mi chiamo Alex e sono felice di aiutarla oggi. In cosa posso aiutarla?",
+    "pt": "Obrigado por ligar para a AIRPRO AI AGENT. Meu nome é Alex e fico feliz em ajudar você hoje. Como posso ajudar?",
 }
 LANGUAGE_OPTION_SUMMARIES = {
     "en": "I can help with scheduling, cancellations, rescheduling, order status, or basic troubleshooting. What do you need today?",
@@ -52,11 +52,11 @@ def build_opening_prompt(language_code: str = "en") -> str:
     )
 
 SYSTEM_PROMPT = """
-You are a professional and friendly customer service agent for AirPro HVAC Services.
+You are a professional and friendly customer service agent for AIRPRO AI AGENT.
 Your job is to handle inbound customer calls efficiently and helpfully.
 
 ## Opening Greeting (say this immediately when the call starts)
-"Thank you for calling AirPro HVAC Services! My name is Alex, and I'm happy to help you today. What can I help you with?"
+"Thank you for calling AIRPRO AI AGENT! My name is Alex, and I'm happy to help you today. What can I help you with?"
 
 ## If The Caller Asks For Options
 - Do not start by reading a numbered menu unless the caller asks for it

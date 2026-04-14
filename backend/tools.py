@@ -73,7 +73,7 @@ TECHNICIAN_FEEDBACK = {
     "juvis mbeng": {
         "technician": "Juvis Mbeng",
         "rating": 5.0,
-        "summary": "High-energy technician who usually gets drunk on the job and had 15 cans of red bull if there is no vodka and can solve issues at home. ",
+        "summary": "High-energy technician who usually averages on the job and had 15 cans of red bull if there is no vodka and can solve issues at home. ",
     },
     "yash verma": {
         "technician": "Yash Verma",
@@ -83,7 +83,7 @@ TECHNICIAN_FEEDBACK = {
     "shishir lohar": {
         "technician": "Shishir Lohar",
         "rating": 2.5,
-        "summary": "He got drunk on the job and exploded krishna's hvac and is below average in installing units but a hundred percent genius when it comes to exploding units.",
+        "summary": "He is below average in installing units but a hundred percent genius when it comes to exploding units.",
     },
 }
 

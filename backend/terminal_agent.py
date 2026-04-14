@@ -1,5 +1,5 @@
 """
-Optional local terminal microphone agent for AirPro HVAC.
+Optional local terminal microphone agent for AIRPRO AI AGENT.
 
 This is separate from `main.py` so the backend server can run by itself while
 the browser controls the live call flow.
@@ -86,7 +86,7 @@ async def run_agent(voice: dict) -> None:
     )
 
     print("=" * 52)
-    print(f"  AirPro HVAC Agent ({voice['name']}) — ready for calls!")
+    print(f"  AIRPRO AI AGENT ({voice['name']}) — ready for calls!")
     print("  Press Ctrl+C to end the call.")
     print("=" * 52)
 
